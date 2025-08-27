@@ -209,9 +209,77 @@ reject if z-score > threshold
 - Check if distribution analysis is triggering (MAD vs stddev)
 - Verify chronological ordering for cloud detection
 
+## Database Regrading
+
+The `regrade` command allows you to apply statistical grading directly to the database, updating image statuses based on analysis results.
+
+### Basic Usage
+```bash
+# Dry run - see what would change
+ts-screen regrade mydb.sqlite --dry-run --enable-statistical --stat-hfr --stat-stars
+
+# Actually update the database
+ts-screen regrade mydb.sqlite --enable-statistical --stat-hfr --stat-stars
+```
+
+### Reset Options
+
+The `--reset` parameter controls how existing grades are handled:
+
+1. **none** (default): Keep existing grades, only add new rejections
+2. **automatic**: Reset automatically graded images to pending (preserves manual grades)
+3. **all**: Reset all images to pending status
+
+```bash
+# Reset automatic grades from last 30 days
+ts-screen regrade mydb.sqlite --reset automatic --days 30
+
+# Reset all grades for a specific target
+ts-screen regrade mydb.sqlite --reset all --target "NGC 7000" --days 7
+```
+
+### Automatic Grade Markers
+
+When the regrade command rejects an image, it prefixes the rejection reason with `[Auto]` to distinguish from manual grades:
+- `[Auto] Statistical HFR - HFR 3.456 is 2.5σ from mean...`
+- `[Auto] Cloud Detection - HFR 3.890 is 25% above baseline...`
+
+This allows the `--reset automatic` option to identify and reset only these automatic grades.
+
+### Safety Features
+
+1. **Always use dry-run first**: Check what will be changed before updating
+2. **Date filtering**: Default 90 days prevents analyzing very old data
+3. **Preserves manual grades**: With `--reset automatic`, manual rejections are kept
+4. **Atomic updates**: Each rejection is updated individually with error handling
+
+### Workflow Examples
+
+#### Initial Statistical Grading
+```bash
+# First time - add statistical grades to ungraded images
+ts-screen regrade mydb.sqlite --enable-statistical --stat-hfr --stat-stars
+```
+
+#### Periodic Reanalysis
+```bash
+# Weekly regrade with updated baselines
+ts-screen regrade mydb.sqlite --reset automatic --days 7 \
+  --enable-statistical --stat-hfr --stat-stars --stat-clouds
+```
+
+#### Target-Specific Tuning
+```bash
+# Aggressive grading for critical target
+ts-screen regrade mydb.sqlite --target "SN 2023xyz" \
+  --enable-statistical --stat-hfr --hfr-stddev 1.5 \
+  --stat-stars --star-stddev 1.5
+```
+
 ## Performance Considerations
 
 - Statistical analysis requires loading all images into memory
 - For large datasets (10,000+ images), expect increased processing time
 - Cloud detection requires chronological sorting, adding overhead
 - Consider filtering by project/target to reduce dataset size
+- Database updates are performed individually for safety

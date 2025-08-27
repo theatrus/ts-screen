@@ -83,6 +83,12 @@ Testing focused on:
 - Added cloud detection algorithm with sequence analysis
 - Implemented rolling baseline establishment after cloud events
 
+#### Database Regrading Command
+- Added `regrade` command to update database with statistical analysis results
+- Supports date range filtering (default: last 90 days)
+- Three reset modes: none, automatic (preserves manual), all
+- Marks auto-rejected images with `[Auto]` prefix for identification
+
 #### Key Implementation Details
 
 1. **Data Flow**:

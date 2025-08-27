@@ -180,6 +180,23 @@ Options:
 - `--cloud-threshold <THRESHOLD>`: Percentage threshold for cloud detection (default: 0.2 = 20% change)
 - `--cloud-baseline-count <COUNT>`: Number of images needed to establish baseline after cloud event (default: 5)
 
+#### regrade
+Regrade images in the database based on statistical analysis
+
+Arguments:
+- `<DATABASE>`: Database file to use
+
+Options:
+- `--dry-run`: Perform a dry run (show what would be changed without actually updating)
+- `-p, --project <PROJECT>`: Filter by project name
+- `-t, --target <TARGET>`: Filter by target name
+- `--days <DAYS>`: Number of days to look back (default: 90)
+- `--reset <MODE>`: Reset mode: none, automatic, or all (default: none)
+  - `none`: Do not reset any existing grades
+  - `automatic`: Reset only automatically graded images (preserves manual grades)
+  - `all`: Reset all images to pending status
+- Statistical analysis options (same as filter-rejected command)
+
 ## Safety Features
 
 1. **Parameterized Queries**: All database queries use parameterized statements to prevent SQL injection
@@ -210,6 +227,15 @@ ts-screen filter-rejected mydb.sqlite ./images --dry-run --enable-statistical --
 
 # Enable cloud detection with custom thresholds
 ts-screen filter-rejected mydb.sqlite ./images --dry-run --enable-statistical --stat-clouds --cloud-threshold 0.15 --cloud-baseline-count 3
+
+# Regrade images in database (last 30 days)
+ts-screen regrade mydb.sqlite --dry-run --days 30 --enable-statistical --stat-hfr --stat-stars
+
+# Reset automatic grades and reapply statistical analysis
+ts-screen regrade mydb.sqlite --dry-run --reset automatic --enable-statistical --stat-hfr --stat-stars --stat-clouds
+
+# Reset all grades for a specific target
+ts-screen regrade mydb.sqlite --dry-run --reset all --target "M31" --days 7
 ```
 
 ## License
