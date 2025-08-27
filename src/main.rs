@@ -2,6 +2,8 @@ use clap::{Parser, Subcommand};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use anyhow::Context;
+use std::path::PathBuf;
+use std::fs;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Project {
@@ -93,23 +95,52 @@ enum Commands {
         /// Project ID or name
         project: String,
     },
+    
+    /// Filter rejected files and move them to LIGHT_REJECT folders
+    FilterRejected {
+        /// Database file to use
+        database: String,
+        
+        /// Base directory containing the image files
+        base_dir: String,
+        
+        /// Perform a dry run (show what would be moved without actually moving)
+        #[arg(long)]
+        dry_run: bool,
+        
+        /// Filter by project name
+        #[arg(short, long)]
+        project: Option<String>,
+        
+        /// Filter by target name
+        #[arg(short, long)]
+        target: Option<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     
-    let conn = Connection::open(&cli.database)
-        .with_context(|| format!("Failed to open database: {}", cli.database))?;
-    
     match cli.command {
         Commands::DumpGrading { status, project, target, format } => {
+            let conn = Connection::open(&cli.database)
+                .with_context(|| format!("Failed to open database: {}", cli.database))?;
             dump_grading_results(&conn, status, project, target, &format)?;
         },
         Commands::ListProjects => {
+            let conn = Connection::open(&cli.database)
+                .with_context(|| format!("Failed to open database: {}", cli.database))?;
             list_projects(&conn)?;
         },
         Commands::ListTargets { project } => {
+            let conn = Connection::open(&cli.database)
+                .with_context(|| format!("Failed to open database: {}", cli.database))?;
             list_targets(&conn, &project)?;
+        },
+        Commands::FilterRejected { database, base_dir, dry_run, project, target } => {
+            let conn = Connection::open(&database)
+                .with_context(|| format!("Failed to open database: {}", database))?;
+            filter_rejected_files(&conn, &base_dir, dry_run, project, target)?;
         },
     }
     
@@ -383,4 +414,253 @@ fn truncate_string(s: &str, max_len: usize) -> String {
     } else {
         format!("{}...", &s[..max_len-3])
     }
+}
+
+fn filter_rejected_files(
+    conn: &Connection,
+    base_dir: &str,
+    dry_run: bool,
+    project_filter: Option<String>,
+    target_filter: Option<String>,
+) -> anyhow::Result<()> {
+    // Query for rejected files
+    let mut query = String::from(
+        "SELECT ai.Id, ai.projectId, ai.targetId, ai.acquireddate, ai.filtername, 
+                ai.gradingStatus, ai.metadata, ai.rejectreason, ai.profileId,
+                p.name as project_name, t.name as target_name
+         FROM acquiredimage ai
+         JOIN project p ON ai.projectId = p.Id
+         JOIN target t ON ai.targetId = t.Id
+         WHERE ai.gradingStatus = 2"  // 2 = Rejected
+    );
+    
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    
+    if let Some(project) = &project_filter {
+        query.push_str(" AND p.name LIKE ?");
+        params.push(Box::new(format!("%{}%", project)));
+    }
+    
+    if let Some(target) = &target_filter {
+        query.push_str(" AND t.name LIKE ?");
+        params.push(Box::new(format!("%{}%", target)));
+    }
+    
+    query.push_str(" ORDER BY ai.acquireddate DESC");
+    
+    let mut stmt = conn.prepare(&query)?;
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    
+    let image_iter = stmt.query_map(
+        param_refs.as_slice(),
+        |row| {
+            Ok((
+                AcquiredImage {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    target_id: row.get(2)?,
+                    acquired_date: row.get(3)?,
+                    filter_name: row.get(4)?,
+                    grading_status: row.get(5)?,
+                    metadata: row.get(6)?,
+                    reject_reason: row.get(7)?,
+                    profile_id: row.get(8)?,
+                },
+                row.get::<_, String>(9)?, // project_name
+                row.get::<_, String>(10)?, // target_name
+            ))
+        }
+    )?;
+    
+    let mut moved_count = 0;
+    let mut not_found_count = 0;
+    let mut error_count = 0;
+    
+    println!("{}Filtering rejected files from database...", if dry_run { "[DRY RUN] " } else { "" });
+    println!();
+    
+    for image_result in image_iter {
+        let (image, _project_name, _target_name) = image_result?;
+        
+        // Extract the full file path from metadata
+        let metadata: serde_json::Value = serde_json::from_str(&image.metadata)?;
+        let original_path = metadata.get("FileName")
+            .and_then(|f| f.as_str())
+            .ok_or_else(|| anyhow::anyhow!("No filename in metadata for image {}", image.id))?;
+        
+        // Parse the original path to understand the structure
+        let path_parts: Vec<&str> = original_path.split(&['\\', '/'][..]).collect();
+        
+        // Find the LIGHT directory index
+        let _light_idx = path_parts.iter().rposition(|&p| p == "LIGHT")
+            .ok_or_else(|| anyhow::anyhow!("LIGHT directory not found in path: {}", original_path))?;
+        
+        // Extract the date folders and filename
+        // Typical structure: .../2025-08-16/Target Name/2025-08-16/LIGHT/filename.fits
+        let filename = path_parts.last()
+            .ok_or_else(|| anyhow::anyhow!("No filename in path: {}", original_path))?;
+        
+        // Build the relative path from base_dir
+        // First try standard structure: date/target_name/date/LIGHT/filename
+        let mut source_path = PathBuf::new();
+        let mut dest_path = PathBuf::new();
+        let mut found_structure = false;
+        
+        if path_parts.len() >= 5 {
+            let relative_parts: Vec<&str> = path_parts[path_parts.len() - 5..].to_vec();
+            source_path = PathBuf::from(base_dir)
+                .join(&relative_parts[0])  // First date
+                .join(&relative_parts[1])  // Target name
+                .join(&relative_parts[2])  // Second date
+                .join("LIGHT")
+                .join(filename);
+            
+            dest_path = PathBuf::from(base_dir)
+                .join(&relative_parts[0])  // First date
+                .join(&relative_parts[1])  // Target name
+                .join(&relative_parts[2])  // Second date
+                .join("LIGHT_REJECT")
+                .join(filename);
+            
+            found_structure = true;
+        }
+        
+        // If standard structure doesn't exist, try alternate: target_name/date/LIGHT/filename
+        if !source_path.exists() {
+            // Extract target name from the original path
+            let mut target_name = None;
+            let mut date = None;
+            
+            // Look for the target name and date in the path
+            for (i, part) in path_parts.iter().enumerate() {
+                // Check if this looks like a date
+                if part.len() == 10 && part.chars().nth(4) == Some('-') && part.chars().nth(7) == Some('-') {
+                    date = Some(*part);
+                    // The target name is likely before the date
+                    if i > 0 {
+                        target_name = Some(path_parts[i-1]);
+                    }
+                }
+            }
+            
+            // Also check the filename for a date if we didn't find one
+            if date.is_none() && filename.len() > 10 {
+                let potential_date = &filename[0..10];
+                if potential_date.chars().nth(4) == Some('-') && potential_date.chars().nth(7) == Some('-') {
+                    date = Some(potential_date);
+                    // If we only found date in filename, target name should be from path
+                    if target_name.is_none() {
+                        // Find the last non-LIGHT, non-date directory in path
+                        for part in path_parts.iter().rev() {
+                            if *part != "LIGHT" && *part != "rejected" && *part != *filename 
+                                && !(part.len() == 10 && part.chars().nth(4) == Some('-')) {
+                                target_name = Some(*part);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if let (Some(target), Some(date_str)) = (target_name, date) {
+                let alt_source_path = PathBuf::from(base_dir)
+                    .join(target)
+                    .join(date_str)
+                    .join("LIGHT")
+                    .join(filename);
+                
+                let alt_rejected_path = PathBuf::from(base_dir)
+                    .join(target)
+                    .join(date_str)
+                    .join("LIGHT")
+                    .join("rejected")
+                    .join(filename);
+                
+                if alt_source_path.exists() || alt_rejected_path.exists() {
+                    source_path = alt_source_path;
+                    dest_path = PathBuf::from(base_dir)
+                        .join(target)
+                        .join(date_str)
+                        .join("LIGHT_REJECT")
+                        .join(filename);
+                    found_structure = true;
+                }
+            }
+        }
+        
+        // Skip if we couldn't determine a valid structure
+        if !found_structure || source_path.as_os_str().is_empty() {
+            println!("  SKIP: Could not determine file structure for: {}", original_path);
+            continue;
+        }
+        
+        // Check if source file exists in either LIGHT or LIGHT/rejected
+        let mut actual_source_path = source_path.clone();
+        let rejected_source_path = if let Some(parent) = source_path.parent() {
+            parent.join("rejected").join(filename)
+        } else {
+            source_path.clone()
+        };
+        
+        if !source_path.exists() {
+            if rejected_source_path.exists() {
+                // File is in the rejected subdirectory, we'll move it from there
+                actual_source_path = rejected_source_path;
+            } else {
+                println!("  NOT FOUND: {} (also checked {})", source_path.display(), rejected_source_path.display());
+                not_found_count += 1;
+                continue;
+            }
+        }
+        
+        // Create destination directory if needed
+        let dest_dir = dest_path.parent().unwrap();
+        
+        if dry_run {
+            println!("  WOULD MOVE: {} -> {}", 
+                     actual_source_path.display(), 
+                     dest_path.display());
+            println!("    Reason: {}", image.reject_reason.as_deref().unwrap_or("No reason given"));
+            moved_count += 1;
+        } else {
+            // Create destination directory
+            match fs::create_dir_all(dest_dir) {
+                Ok(_) => {
+                    // Move the file
+                    match fs::rename(&actual_source_path, &dest_path) {
+                        Ok(_) => {
+                            println!("  MOVED: {} -> {}", 
+                                     actual_source_path.display(), 
+                                     dest_path.display());
+                            println!("    Reason: {}", image.reject_reason.as_deref().unwrap_or("No reason given"));
+                            moved_count += 1;
+                        },
+                        Err(e) => {
+                            println!("  ERROR moving {}: {}", actual_source_path.display(), e);
+                            error_count += 1;
+                        }
+                    }
+                },
+                Err(e) => {
+                    println!("  ERROR creating directory {}: {}", dest_dir.display(), e);
+                    error_count += 1;
+                }
+            }
+        }
+    }
+    
+    println!();
+    println!("Summary:");
+    println!("  Files to move: {}", moved_count);
+    println!("  Files not found: {}", not_found_count);
+    if !dry_run && error_count > 0 {
+        println!("  Errors: {}", error_count);
+    }
+    
+    if dry_run && moved_count > 0 {
+        println!();
+        println!("This was a dry run. Use without --dry-run to actually move the files.");
+    }
+    
+    Ok(())
 }
