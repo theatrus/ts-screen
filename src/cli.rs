@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "ts-screen")]
-#[command(about = "A tool to analyze telescope scheduler database", long_about = None)]
+#[command(name = "psf-guard")]
+#[command(about = "PSF Guard: Astronomical image analysis and quality assessment tool", long_about = None)]
 pub struct Cli {
     #[arg(short, long, default_value = "schedulerdb.sqlite")]
     pub database: String,
