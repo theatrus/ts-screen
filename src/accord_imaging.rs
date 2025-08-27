@@ -28,12 +28,26 @@ impl DetectionUtility {
         let new_width = (width as f64 * resize_factor).floor() as usize;
         let new_height = (height as f64 * resize_factor).floor() as usize;
         
-        // Use ResizeBicubic algorithm
-        let resizer = ResizeBicubic::new(new_width, new_height);
-        let resized = resizer.apply(image, width, height);
+        // Use image crate for bicubic interpolation
+        let resized = resize_bicubic_image_crate(image, width, height, new_width, new_height);
         
         (resized, new_width, new_height)
     }
+}
+
+/// Use image crate for bicubic interpolation
+fn resize_bicubic_image_crate(image: &[u8], width: usize, height: usize, new_width: usize, new_height: usize) -> Vec<u8> {
+    use image::{ImageBuffer, Luma};
+    
+    // Create an ImageBuffer from our data
+    let img = ImageBuffer::<Luma<u8>, Vec<u8>>::from_vec(width as u32, height as u32, image.to_vec())
+        .expect("Failed to create image buffer");
+    
+    // Resize using bicubic interpolation
+    let resized = image::imageops::resize(&img, new_width as u32, new_height as u32, image::imageops::FilterType::CatmullRom);
+    
+    // Convert back to Vec<u8>
+    resized.into_raw()
 }
 
 /// Resize using bicubic interpolation

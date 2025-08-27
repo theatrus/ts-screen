@@ -3,6 +3,30 @@
 
 use crate::accord_imaging::*;
 
+/// Banker's rounding (round half to even) to match .NET's default Math.Round
+fn round_half_to_even(x: f64) -> f64 {
+    let truncated = x.trunc();
+    let fraction = x - truncated;
+    
+    if fraction > 0.5 || fraction < -0.5 {
+        x.round()
+    } else if fraction == 0.5 {
+        if truncated % 2.0 == 0.0 {
+            truncated
+        } else {
+            truncated + 1.0
+        }
+    } else if fraction == -0.5 {
+        if truncated % 2.0 == 0.0 {
+            truncated
+        } else {
+            truncated - 1.0
+        }
+    } else {
+        truncated
+    }
+}
+
 /// Star detection parameters matching N.I.N.A.
 #[derive(Debug, Clone)]
 pub struct StarDetectionParams {
@@ -562,7 +586,8 @@ fn calculate_star_hfr(state: &DetectionState, mut star: Star) -> Star {
                 let pixel_value = state.original_data[(y as usize) * state.width + (x as usize)] as f64;
                 
                 // N.I.N.A.'s exact background subtraction: Math.Round(value - SurroundingMean)
-                let mut value = (pixel_value - star.surrounding_mean).round();
+                // Uses banker's rounding (round half to even)
+                let mut value = round_half_to_even(pixel_value - star.surrounding_mean);
                 if value < 0.0 {
                     value = 0.0;
                 }
