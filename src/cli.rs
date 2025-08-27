@@ -93,6 +93,25 @@ pub enum Commands {
         #[command(flatten)]
         stat_options: StatisticalOptions,
     },
+
+    /// Show details for specific images by ID
+    ShowImages {
+        /// Comma-separated list of image IDs
+        ids: String,
+    },
+
+    /// Manually update the grading status of an image
+    UpdateGrade {
+        /// Image ID to update
+        id: i32,
+
+        /// New grading status (pending, accepted, rejected)
+        status: String,
+
+        /// Rejection reason (optional, used when status is rejected)
+        #[arg(short, long)]
+        reason: Option<String>,
+    },
 }
 
 #[derive(Parser, Debug, Clone)]

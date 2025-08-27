@@ -1,10 +1,11 @@
+use crate::db::Database;
 use crate::grading;
-use crate::models::AcquiredImage;
+use crate::models::{AcquiredImage, GradingStatus};
 use anyhow::Result;
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub fn filter_rejected_files(
     conn: &Connection,
@@ -14,65 +15,27 @@ pub fn filter_rejected_files(
     target_filter: Option<String>,
     stat_config: Option<grading::StatisticalGradingConfig>,
 ) -> Result<()> {
+    let db = Database::new(conn);
+
     // If statistical analysis is enabled, we need all images to analyze
     let perform_statistical = stat_config.is_some();
 
-    // Query for images - if statistical analysis enabled, get all; otherwise just rejected
-    let mut query = String::from(
-        "SELECT ai.Id, ai.projectId, ai.targetId, ai.acquireddate, ai.filtername, 
-                ai.gradingStatus, ai.metadata, ai.rejectreason, ai.profileId,
-                p.name as project_name, t.name as target_name
-         FROM acquiredimage ai
-         JOIN project p ON ai.projectId = p.Id
-         JOIN target t ON ai.targetId = t.Id",
-    );
-
-    if !perform_statistical {
-        query.push_str(" WHERE ai.gradingStatus = 2"); // 2 = Rejected
+    // Get images - if statistical analysis enabled, get all; otherwise just rejected
+    let all_images = if perform_statistical {
+        db.query_images(
+            None, // Get all statuses for statistical analysis
+            project_filter.as_deref(),
+            target_filter.as_deref(),
+            None,
+        )?
     } else {
-        query.push_str(" WHERE 1=1"); // Get all images for statistical analysis
-    }
-
-    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-
-    if let Some(project) = &project_filter {
-        query.push_str(" AND p.name LIKE ?");
-        params.push(Box::new(format!("%{}%", project)));
-    }
-
-    if let Some(target) = &target_filter {
-        query.push_str(" AND t.name LIKE ?");
-        params.push(Box::new(format!("%{}%", target)));
-    }
-
-    query.push_str(" ORDER BY ai.acquireddate DESC");
-
-    let mut stmt = conn.prepare(&query)?;
-    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-
-    let image_iter = stmt.query_map(param_refs.as_slice(), |row| {
-        Ok((
-            AcquiredImage {
-                id: row.get(0)?,
-                project_id: row.get(1)?,
-                target_id: row.get(2)?,
-                acquired_date: row.get(3)?,
-                filter_name: row.get(4)?,
-                grading_status: row.get(5)?,
-                metadata: row.get(6)?,
-                reject_reason: row.get(7)?,
-                profile_id: row.get(8)?,
-            },
-            row.get::<_, String>(9)?,  // project_name
-            row.get::<_, String>(10)?, // target_name
-        ))
-    })?;
-
-    // Collect all images first
-    let mut all_images = Vec::new();
-    for image_result in image_iter {
-        all_images.push(image_result?);
-    }
+        db.query_images(
+            Some(GradingStatus::Rejected),
+            project_filter.as_deref(),
+            target_filter.as_deref(),
+            None,
+        )?
+    };
 
     // Perform statistical analysis if enabled
     let mut statistical_rejections = HashMap::new();
@@ -151,17 +114,15 @@ pub fn filter_rejected_files(
         }
     }
 
-    println!();
-    println!("Summary:");
-    println!("  Files to move: {}", moved_count);
+    println!("\nSummary:");
+    println!("  Files moved: {}", moved_count);
     println!("  Files not found: {}", not_found_count);
-    if !dry_run && error_count > 0 {
+    if error_count > 0 {
         println!("  Errors: {}", error_count);
     }
 
-    if dry_run && moved_count > 0 {
-        println!();
-        println!("This was a dry run. Use without --dry-run to actually move the files.");
+    if dry_run {
+        println!("\nThis was a dry run. Use without --dry-run to actually move files.");
     }
 
     Ok(())
@@ -173,258 +134,148 @@ fn process_file_movement(
     dry_run: bool,
     statistical_rejections: &HashMap<i32, grading::StatisticalRejection>,
 ) -> Result<bool> {
-    // Extract the full file path from metadata
-    let metadata: serde_json::Value = serde_json::from_str(&image.metadata)?;
-    let original_path = metadata
-        .get("FileName")
-        .and_then(|f| f.as_str())
+    let metadata = serde_json::from_str::<serde_json::Value>(&image.metadata)?;
+
+    let filename = metadata["FileName"]
+        .as_str()
         .ok_or_else(|| anyhow::anyhow!("No filename in metadata for image {}", image.id))?;
 
-    // Parse the original path to understand the structure
-    let path_parts: Vec<&str> = original_path.split(&['\\', '/'][..]).collect();
+    let acquired_date = image
+        .acquired_date
+        .and_then(|d| chrono::DateTime::from_timestamp(d, 0))
+        .ok_or_else(|| anyhow::anyhow!("Invalid date for image {}", image.id))?;
 
-    // Find the LIGHT directory index
-    let _light_idx = path_parts
-        .iter()
-        .rposition(|&p| p == "LIGHT")
-        .ok_or_else(|| anyhow::anyhow!("LIGHT directory not found in path: {}", original_path))?;
+    let date_str = acquired_date.format("%Y-%m-%d").to_string();
 
-    // Extract the filename
-    let filename = path_parts
-        .last()
-        .ok_or_else(|| anyhow::anyhow!("No filename in path: {}", original_path))?;
+    // Extract just the filename from the full path
+    let file_only = PathBuf::from(filename)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .ok_or_else(|| anyhow::anyhow!("Invalid filename format"))?
+        .to_string();
 
-    // Build the paths
-    let (source_path, dest_path, actual_source_path) =
-        build_file_paths(base_dir, &path_parts, filename)?;
+    // Try to find the file in different possible locations
+    let possible_paths = get_possible_paths(
+        base_dir,
+        &date_str,
+        metadata["TargetName"].as_str().unwrap_or("Unknown"),
+        &file_only,
+    );
 
-    if actual_source_path.is_none() {
-        println!("  NOT FOUND: {}", source_path.display());
-        return Ok(false);
+    let mut source_path = None;
+    for path in &possible_paths {
+        if path.exists() {
+            source_path = Some(path.clone());
+            break;
+        }
     }
 
-    let actual_source_path = actual_source_path.unwrap();
+    let source_path = match source_path {
+        Some(path) => path,
+        None => {
+            let rejection_reason =
+                if let Some(stat_rejection) = statistical_rejections.get(&image.id) {
+                    format!("{} - {}", stat_rejection.reason, stat_rejection.details)
+                } else {
+                    image
+                        .reject_reason
+                        .clone()
+                        .unwrap_or_else(|| "No reason".to_string())
+                };
 
-    // Create destination directory if needed
-    let dest_dir = dest_path.parent().unwrap();
+            println!(
+                "  {:6} NOT FOUND: {} ({})",
+                image.id, file_only, rejection_reason
+            );
+            return Ok(false);
+        }
+    };
 
-    // Determine the rejection reason
+    // Create the reject path by replacing LIGHT with LIGHT_REJECT
+    let reject_path = get_reject_path(&source_path)?;
+
     let rejection_reason = if let Some(stat_rejection) = statistical_rejections.get(&image.id) {
-        format!("{}: {}", stat_rejection.reason, stat_rejection.details)
+        format!("{} - {}", stat_rejection.reason, stat_rejection.details)
     } else {
         image
             .reject_reason
-            .as_deref()
-            .unwrap_or("No reason given")
-            .to_string()
+            .clone()
+            .unwrap_or_else(|| "No reason".to_string())
     };
 
-    if dry_run {
-        println!(
-            "  WOULD MOVE: {} -> {}",
-            actual_source_path.display(),
-            dest_path.display()
-        );
-        println!("    Reason: {}", rejection_reason);
-    } else {
-        // Create destination directory
-        fs::create_dir_all(dest_dir)?;
+    println!(
+        "  {:6} {} -> {}",
+        image.id,
+        source_path.display(),
+        reject_path.display()
+    );
+    println!("         Reason: {}", rejection_reason);
+
+    if !dry_run {
+        // Create the reject directory if it doesn't exist
+        if let Some(parent) = reject_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
 
         // Move the file
-        match fs::rename(&actual_source_path, &dest_path) {
-            Ok(_) => {
-                println!(
-                    "  MOVED: {} -> {}",
-                    actual_source_path.display(),
-                    dest_path.display()
-                );
-                println!("    Reason: {}", rejection_reason);
-            }
-            Err(e) => {
-                return Err(anyhow::anyhow!(
-                    "Failed to move {}: {}",
-                    actual_source_path.display(),
-                    e
-                ));
-            }
-        }
+        fs::rename(&source_path, &reject_path)?;
     }
 
     Ok(true)
 }
 
-fn build_file_paths(
+fn get_possible_paths(
     base_dir: &str,
-    path_parts: &[&str],
+    date_str: &str,
+    target_name: &str,
     filename: &str,
-) -> Result<(PathBuf, PathBuf, Option<PathBuf>)> {
-    let mut source_path = PathBuf::new();
-    let mut dest_path = PathBuf::new();
+) -> Vec<PathBuf> {
+    let base = PathBuf::from(base_dir);
 
-    // Try standard structure: date/target_name/date/LIGHT/filename
-    if path_parts.len() >= 5 {
-        let relative_parts: Vec<&str> = path_parts[path_parts.len() - 5..].to_vec();
-        source_path = PathBuf::from(base_dir)
-            .join(relative_parts[0]) // First date
-            .join(relative_parts[1]) // Target name
-            .join(relative_parts[2]) // Second date
+    vec![
+        // date/target/date/LIGHT/file.fits
+        base.join(date_str)
+            .join(target_name)
+            .join(date_str)
             .join("LIGHT")
-            .join(filename);
-
-        dest_path = PathBuf::from(base_dir)
-            .join(relative_parts[0]) // First date
-            .join(relative_parts[1]) // Target name
-            .join(relative_parts[2]) // Second date
-            .join("LIGHT_REJECT")
-            .join(filename);
-    }
-
-    // Check if source exists
-    let mut actual_source_path = None;
-    if source_path.exists() {
-        actual_source_path = Some(source_path.clone());
-    } else {
-        // Try alternate structure: target_name/date/LIGHT/filename
-        if let Some((target_name, date)) = extract_target_and_date(path_parts, filename) {
-            let alt_source_path = PathBuf::from(base_dir)
-                .join(target_name)
-                .join(date)
-                .join("LIGHT")
-                .join(filename);
-
-            if alt_source_path.exists() {
-                source_path = alt_source_path;
-                dest_path = PathBuf::from(base_dir)
-                    .join(target_name)
-                    .join(date)
-                    .join("LIGHT_REJECT")
-                    .join(filename);
-                actual_source_path = Some(source_path.clone());
-            } else {
-                // Check rejected subdirectory
-                let rejected_path = PathBuf::from(base_dir)
-                    .join(target_name)
-                    .join(date)
-                    .join("LIGHT")
-                    .join("rejected")
-                    .join(filename);
-
-                if rejected_path.exists() {
-                    actual_source_path = Some(rejected_path);
-                }
-            }
-        }
-    }
-
-    // Also check standard rejected subdirectory
-    if actual_source_path.is_none() && source_path.parent().is_some() {
-        let rejected_path = source_path
-            .parent()
-            .unwrap()
+            .join(filename),
+        // target/date/LIGHT/file.fits
+        base.join(target_name)
+            .join(date_str)
+            .join("LIGHT")
+            .join(filename),
+        // date/target/date/LIGHT/rejected/file.fits
+        base.join(date_str)
+            .join(target_name)
+            .join(date_str)
+            .join("LIGHT")
             .join("rejected")
-            .join(filename);
-        if rejected_path.exists() {
-            actual_source_path = Some(rejected_path);
-        }
-    }
-
-    Ok((source_path, dest_path, actual_source_path))
+            .join(filename),
+        // target/date/LIGHT/rejected/file.fits
+        base.join(target_name)
+            .join(date_str)
+            .join("LIGHT")
+            .join("rejected")
+            .join(filename),
+    ]
 }
 
-fn extract_target_and_date<'a>(
-    path_parts: &[&'a str],
-    filename: &'a str,
-) -> Option<(&'a str, &'a str)> {
-    let mut target_name = None;
-    let mut date = None;
+fn get_reject_path(source_path: &Path) -> Result<PathBuf> {
+    let path_str = source_path.to_string_lossy();
 
-    // Look for date pattern in path
-    for (i, part) in path_parts.iter().enumerate() {
-        if part.len() == 10 && part.chars().nth(4) == Some('-') && part.chars().nth(7) == Some('-')
-        {
-            date = Some(*part);
-            // The target name is likely before the date
-            if i > 0 {
-                target_name = Some(path_parts[i - 1]);
-            }
-        }
-    }
-
-    // Also check filename for date if not found
-    if date.is_none() && filename.len() > 10 {
-        let potential_date = &filename[0..10];
-        if potential_date.chars().nth(4) == Some('-') && potential_date.chars().nth(7) == Some('-')
-        {
-            date = Some(potential_date);
-            // Find target name from path
-            if target_name.is_none() {
-                for part in path_parts.iter().rev() {
-                    if *part != "LIGHT"
-                        && *part != "rejected"
-                        && *part != filename
-                        && !(part.len() == 10 && part.chars().nth(4) == Some('-'))
-                    {
-                        target_name = Some(*part);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    if let (Some(target), Some(date_str)) = (target_name, date) {
-        Some((target, date_str))
+    // If the file is already in a rejected subdirectory, move it up to LIGHT_REJECT
+    if path_str.contains("/LIGHT/rejected/") || path_str.contains("\\LIGHT\\rejected\\") {
+        Ok(PathBuf::from(
+            path_str
+                .replace("/LIGHT/rejected/", "/LIGHT_REJECT/")
+                .replace("\\LIGHT\\rejected\\", "\\LIGHT_REJECT\\"),
+        ))
     } else {
-        None
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_target_and_date_standard() {
-        let path_parts = vec!["home", "user", "Bubble Nebula", "2023-08-27", "LIGHT"];
-        let filename = "image.fits";
-
-        let result = extract_target_and_date(&path_parts, filename);
-        assert_eq!(result, Some(("Bubble Nebula", "2023-08-27")));
-    }
-
-    #[test]
-    fn test_extract_target_and_date_from_filename() {
-        let path_parts = vec!["home", "user", "NGC 7000", "LIGHT"];
-        let filename = "2023-08-27_NGC7000_Ha_300s.fits";
-
-        let result = extract_target_and_date(&path_parts, filename);
-        assert_eq!(result, Some(("NGC 7000", "2023-08-27")));
-    }
-
-    #[test]
-    fn test_extract_target_and_date_no_date() {
-        let path_parts = vec!["home", "user", "target", "LIGHT"];
-        let filename = "image.fits";
-
-        let result = extract_target_and_date(&path_parts, filename);
-        assert_eq!(result, None);
-    }
-
-    #[test]
-    fn test_extract_target_and_date_multiple_dates() {
-        let path_parts = vec!["2023-08-26", "Target Name", "2023-08-27", "LIGHT"];
-        let filename = "image.fits";
-
-        let result = extract_target_and_date(&path_parts, filename);
-        assert_eq!(result, Some(("Target Name", "2023-08-27")));
-    }
-
-    #[test]
-    fn test_extract_target_and_date_with_rejected() {
-        let path_parts = vec!["Target", "2023-08-27", "LIGHT", "rejected"];
-        let filename = "image.fits";
-
-        let result = extract_target_and_date(&path_parts, filename);
-        assert_eq!(result, Some(("Target", "2023-08-27")));
+        // Replace LIGHT with LIGHT_REJECT
+        Ok(PathBuf::from(
+            path_str
+                .replace("/LIGHT/", "/LIGHT_REJECT/")
+                .replace("\\LIGHT\\", "\\LIGHT_REJECT\\"),
+        ))
     }
 }
