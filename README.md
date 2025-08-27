@@ -1,9 +1,9 @@
-# N.I.N.A Target Scheduler Plugin File Screener (ts-screen)
+# PSF Guard
 
-[![CI](https://github.com/theatrus/ts-screen/actions/workflows/ci.yml/badge.svg)](https://github.com/theatrus/ts-screen/actions/workflows/ci.yml)
+[![CI](https://github.com/theatrus/psf-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/theatrus/psf-guard/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-A Rust utility for analyzing N.I.N.A. (Nighttime Imaging 'N' Astronomy) Target Scheduler plugin databases and managing rejected astronomical image files.
+A Rust utility for analyzing N.I.N.A. (Nighttime Imaging 'N' Astronomy) Target Scheduler plugin databases and managing astronomical image files. While designed to work with the Target Scheduler plugin, many features (like FITS metadata reading) can be used independently of the Target Scheduler.
 
 ## Documentation
 
@@ -12,11 +12,14 @@ A Rust utility for analyzing N.I.N.A. (Nighttime Imaging 'N' Astronomy) Target S
 
 ## Overview
 
-TS-Screen (N.I.N.A Target Scheduler Plugin File Screener) provides tools to:
-- Query and analyze image grading results from N.I.N.A. Target Scheduler SQLite databases
-- List projects and targets with their imaging statistics
-- Filter and organize rejected image files based on database grading status
-- Support multiple directory structures for image organization
+PSF Guard provides tools to:
+- **Target Scheduler Integration**: Query and analyze image grading results from N.I.N.A. Target Scheduler SQLite databases
+- **Project Management**: List projects and targets with their imaging statistics
+- **File Organization**: Filter and organize rejected image files based on database grading status
+- **FITS Analysis**: Read and display metadata from FITS astronomical image files (works independently)
+- **Statistical Grading**: Advanced outlier detection using HFR, star count, and cloud detection algorithms
+- **Multiple Formats**: Support for JSON, CSV, and table output formats
+- **Directory Support**: Handle multiple directory structures for image organization
 
 ## Installation
 
@@ -26,12 +29,12 @@ TS-Screen (N.I.N.A Target Scheduler Plugin File Screener) provides tools to:
 
 ### Building from Source
 ```bash
-git clone https://github.com/theatrus/ts-screen.git
-cd ts-screen
+git clone https://github.com/theatrus/psf-guard.git
+cd psf-guard
 cargo build --release
 ```
 
-The compiled binary will be available at `target/release/ts-screen`.
+The compiled binary will be available at `target/release/psf-guard`.
 
 ## Usage
 
@@ -39,30 +42,49 @@ The compiled binary will be available at `target/release/ts-screen`.
 
 #### List all projects
 ```bash
-ts-screen list-projects
+psf-guard list-projects
 ```
 
 #### List targets for a specific project
 ```bash
-ts-screen list-targets "Project Name"
+psf-guard list-targets "Project Name"
 ```
 
 #### Dump grading results
 ```bash
 # Show all images
-ts-screen dump-grading
+psf-guard dump-grading
 
 # Filter by status (pending, accepted, rejected)
-ts-screen dump-grading --status rejected
+psf-guard dump-grading --status rejected
 
 # Filter by project
-ts-screen dump-grading --project "Cygnus Wall"
+psf-guard dump-grading --project "Cygnus Wall"
 
 # Filter by target
-ts-screen dump-grading --target "North American"
+psf-guard dump-grading --target "North American"
 
 # Output formats (table, json, csv)
-ts-screen dump-grading --format json
+psf-guard dump-grading --format json
+```
+
+### Read FITS File Metadata
+
+Display metadata from FITS astronomical image files:
+
+```bash
+# Read a single FITS file
+psf-guard read-fits image.fits
+
+# Read all FITS files in a directory (recursive)
+psf-guard read-fits /path/to/fits/directory
+
+# Show all header keywords (verbose mode)
+psf-guard read-fits --verbose image.fits
+
+# Output formats (table, json, csv)
+psf-guard read-fits --format json image.fits
+psf-guard read-fits --format csv /path/to/fits/directory
 ```
 
 ### Filter Rejected Files
@@ -73,13 +95,13 @@ The `filter-rejected` command moves rejected image files to a `LIGHT_REJECT` dir
 
 ```bash
 # Dry run (recommended first step)
-ts-screen filter-rejected schedulerdb.sqlite /path/to/images --dry-run
+psf-guard filter-rejected schedulerdb.sqlite /path/to/images --dry-run
 
 # Filter by project
-ts-screen filter-rejected schedulerdb.sqlite /path/to/images --dry-run --project "Double Dragon"
+psf-guard filter-rejected schedulerdb.sqlite /path/to/images --dry-run --project "Double Dragon"
 
 # Actually move files (use with caution!)
-ts-screen filter-rejected schedulerdb.sqlite /path/to/images --project "Double Dragon"
+psf-guard filter-rejected schedulerdb.sqlite /path/to/images --project "Double Dragon"
 ```
 
 ### Supported Directory Structures
@@ -113,7 +135,7 @@ The utility also handles files already in `LIGHT/rejected/` subdirectories and m
 
 ### Statistical Grading
 
-Beyond the database grading status, ts-screen can perform statistical analysis to identify additional outliers:
+Beyond the database grading status, PSF Guard can perform statistical analysis to identify additional outliers:
 
 - **HFR Analysis**: Detects images with Half Flux Radius (focus quality) significantly different from the target's distribution
 - **Star Count Analysis**: Identifies images with abnormal star detection counts per target
@@ -183,6 +205,16 @@ Options:
 - `--cloud-threshold <THRESHOLD>`: Percentage threshold for cloud detection (default: 0.2 = 20% change)
 - `--cloud-baseline-count <COUNT>`: Number of images needed to establish baseline after cloud event (default: 5)
 
+#### read-fits
+Read and display metadata from FITS files
+
+Arguments:
+- `<PATH>`: Path to FITS file or directory containing FITS files
+
+Options:
+- `-v, --verbose`: Show verbose output with all headers
+- `-f, --format <FORMAT>`: Output format (table, json, csv) [default: table]
+
 #### regrade
 Regrade images in the database based on statistical analysis
 
@@ -211,34 +243,47 @@ Options:
 
 ```bash
 # Check what rejected files exist for a project
-ts-screen dump-grading --status rejected --project "Double Dragon" --format csv > rejected_files.csv
+psf-guard dump-grading --status rejected --project "Double Dragon" --format csv > rejected_files.csv
 
 # Preview file moves for a specific project
-ts-screen filter-rejected mydb.sqlite ./images --dry-run --project "Cygnus Wall"
+psf-guard filter-rejected mydb.sqlite ./images --dry-run --project "Cygnus Wall"
 
 # Move all rejected files for a target
-ts-screen filter-rejected mydb.sqlite ./images --target "LDN 1228"
+psf-guard filter-rejected mydb.sqlite ./images --target "LDN 1228"
 
 # Get JSON output for integration with other tools
-ts-screen dump-grading --status accepted --format json | jq '.[] | select(.filter_name == "HA")'
+psf-guard dump-grading --status accepted --format json | jq '.[] | select(.filter_name == "HA")'
 
 # Use statistical grading to find outliers beyond database rejections
-ts-screen filter-rejected mydb.sqlite ./images --dry-run --enable-statistical --stat-hfr --stat-stars
+psf-guard filter-rejected mydb.sqlite ./images --dry-run --enable-statistical --stat-hfr --stat-stars
 
 # Fine-tune statistical thresholds
-ts-screen filter-rejected mydb.sqlite ./images --dry-run --enable-statistical --stat-hfr --hfr-stddev 1.5 --stat-distribution --median-shift-threshold 0.15
+psf-guard filter-rejected mydb.sqlite ./images --dry-run --enable-statistical --stat-hfr --hfr-stddev 1.5 --stat-distribution --median-shift-threshold 0.15
 
 # Enable cloud detection with custom thresholds
-ts-screen filter-rejected mydb.sqlite ./images --dry-run --enable-statistical --stat-clouds --cloud-threshold 0.15 --cloud-baseline-count 3
+psf-guard filter-rejected mydb.sqlite ./images --dry-run --enable-statistical --stat-clouds --cloud-threshold 0.15 --cloud-baseline-count 3
 
 # Regrade images in database (last 30 days)
-ts-screen regrade mydb.sqlite --dry-run --days 30 --enable-statistical --stat-hfr --stat-stars
+psf-guard regrade mydb.sqlite --dry-run --days 30 --enable-statistical --stat-hfr --stat-stars
 
 # Reset automatic grades and reapply statistical analysis
-ts-screen regrade mydb.sqlite --dry-run --reset automatic --enable-statistical --stat-hfr --stat-stars --stat-clouds
+psf-guard regrade mydb.sqlite --dry-run --reset automatic --enable-statistical --stat-hfr --stat-stars --stat-clouds
 
 # Reset all grades for a specific target
-ts-screen regrade mydb.sqlite --dry-run --reset all --target "M31" --days 7
+psf-guard regrade mydb.sqlite --dry-run --reset all --target "M31" --days 7
+
+# Analyze FITS file metadata
+psf-guard read-fits "image.fits"
+
+# Check all FITS files in a directory
+psf-guard read-fits "/path/to/fits/files/"
+
+# Show all header keywords for debugging
+psf-guard read-fits --verbose "image.fits"
+
+# Export FITS metadata to JSON or CSV for analysis
+psf-guard read-fits --format json "/path/to/fits/files/" > metadata.json
+psf-guard read-fits --format csv "/path/to/fits/files/" > metadata.csv
 ```
 
 ## License

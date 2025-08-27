@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "ts-screen")]
-#[command(about = "A tool to analyze telescope scheduler database", long_about = None)]
+#[command(name = "psf-guard")]
+#[command(about = "PSF Guard: Astronomical image analysis and quality assessment tool", long_about = None)]
 pub struct Cli {
     #[arg(short, long, default_value = "schedulerdb.sqlite")]
     pub database: String,
@@ -111,6 +111,20 @@ pub enum Commands {
         /// Rejection reason (optional, used when status is rejected)
         #[arg(short, long)]
         reason: Option<String>,
+    },
+
+    /// Read and display metadata from FITS files
+    ReadFits {
+        /// Path to FITS file or directory containing FITS files
+        path: String,
+
+        /// Show verbose output with all headers
+        #[arg(short, long)]
+        verbose: bool,
+
+        /// Output format (table, json, csv)
+        #[arg(short, long, default_value = "table")]
+        format: String,
     },
 }
 

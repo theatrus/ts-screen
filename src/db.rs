@@ -2,7 +2,7 @@ use crate::models::{AcquiredImage, GradingStatus, Project, Target};
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
 
-/// Database access layer for ts-screen
+/// Database access layer for PSF Guard
 pub struct Database<'a> {
     conn: &'a Connection,
 }

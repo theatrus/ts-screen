@@ -2,7 +2,7 @@
 
 ## Overview
 
-The statistical grading feature in ts-screen provides advanced image quality analysis beyond the basic accept/reject status stored in the database. It uses statistical methods to identify outliers and detect transient issues like clouds that may affect image quality.
+The statistical grading feature in PSF Guard provides advanced image quality analysis beyond the basic accept/reject status stored in the database. It uses statistical methods to identify outliers and detect transient issues like clouds that may affect image quality.
 
 ## Key Features
 
@@ -75,21 +75,21 @@ The cloud detection algorithm monitors image sequences for sudden deterioration 
 ### Basic Statistical Analysis
 ```bash
 # Dry run with HFR and star count analysis
-ts-screen filter-rejected mydb.sqlite ./images --dry-run \
+psf-guard filter-rejected mydb.sqlite ./images --dry-run \
   --enable-statistical --stat-hfr --stat-stars
 ```
 
 ### Cloud Detection Only
 ```bash
 # Focus on cloud detection with custom sensitivity
-ts-screen filter-rejected mydb.sqlite ./images --dry-run \
+psf-guard filter-rejected mydb.sqlite ./images --dry-run \
   --enable-statistical --stat-clouds --cloud-threshold 0.15
 ```
 
 ### Full Analysis with Custom Thresholds
 ```bash
 # Conservative settings for critical data
-ts-screen filter-rejected mydb.sqlite ./images --dry-run \
+psf-guard filter-rejected mydb.sqlite ./images --dry-run \
   --enable-statistical \
   --stat-hfr --hfr-stddev 1.5 \
   --stat-stars --star-stddev 1.5 \
@@ -99,7 +99,7 @@ ts-screen filter-rejected mydb.sqlite ./images --dry-run \
 ### Target-Specific Analysis
 ```bash
 # Analyze specific target with all features
-ts-screen filter-rejected mydb.sqlite ./images --dry-run \
+psf-guard filter-rejected mydb.sqlite ./images --dry-run \
   --target "M31" \
   --enable-statistical --stat-hfr --stat-stars --stat-clouds
 ```
@@ -216,10 +216,10 @@ The `regrade` command allows you to apply statistical grading directly to the da
 ### Basic Usage
 ```bash
 # Dry run - see what would change
-ts-screen regrade mydb.sqlite --dry-run --enable-statistical --stat-hfr --stat-stars
+psf-guard regrade mydb.sqlite --dry-run --enable-statistical --stat-hfr --stat-stars
 
 # Actually update the database
-ts-screen regrade mydb.sqlite --enable-statistical --stat-hfr --stat-stars
+psf-guard regrade mydb.sqlite --enable-statistical --stat-hfr --stat-stars
 ```
 
 ### Reset Options
@@ -232,10 +232,10 @@ The `--reset` parameter controls how existing grades are handled:
 
 ```bash
 # Reset automatic grades from last 30 days
-ts-screen regrade mydb.sqlite --reset automatic --days 30
+psf-guard regrade mydb.sqlite --reset automatic --days 30
 
 # Reset all grades for a specific target
-ts-screen regrade mydb.sqlite --reset all --target "NGC 7000" --days 7
+psf-guard regrade mydb.sqlite --reset all --target "NGC 7000" --days 7
 ```
 
 ### Automatic Grade Markers
@@ -258,20 +258,20 @@ This allows the `--reset automatic` option to identify and reset only these auto
 #### Initial Statistical Grading
 ```bash
 # First time - add statistical grades to ungraded images
-ts-screen regrade mydb.sqlite --enable-statistical --stat-hfr --stat-stars
+psf-guard regrade mydb.sqlite --enable-statistical --stat-hfr --stat-stars
 ```
 
 #### Periodic Reanalysis
 ```bash
 # Weekly regrade with updated baselines
-ts-screen regrade mydb.sqlite --reset automatic --days 7 \
+psf-guard regrade mydb.sqlite --reset automatic --days 7 \
   --enable-statistical --stat-hfr --stat-stars --stat-clouds
 ```
 
 #### Target-Specific Tuning
 ```bash
 # Aggressive grading for critical target
-ts-screen regrade mydb.sqlite --target "SN 2023xyz" \
+psf-guard regrade mydb.sqlite --target "SN 2023xyz" \
   --enable-statistical --stat-hfr --hfr-stddev 1.5 \
   --stat-stars --star-stddev 1.5
 ```

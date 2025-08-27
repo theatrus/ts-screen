@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-TS-Screen (N.I.N.A Target Scheduler Plugin File Screener) is a Rust CLI utility designed to analyze N.I.N.A. Target Scheduler plugin databases and manage rejected astronomical image files. The project was developed to help organize FITS files based on their grading status in the N.I.N.A. Target Scheduler database.
+PSF Guard (Point Spread Function Guard) is a Rust CLI utility designed to analyze N.I.N.A. Target Scheduler plugin databases and manage rejected astronomical image files. The project was developed to help organize FITS files based on their grading status in the N.I.N.A. Target Scheduler database.
 
 ## Key Implementation Details
 
@@ -119,7 +119,7 @@ Testing focused on:
 1. **Parallel Processing**: File moves could be parallelized for large batches
 2. **Progress Bars**: For long-running operations
 3. **Undo Capability**: Track moves in a local database for reversal
-4. **Configuration File**: Support for .tsscreenrc configuration
+4. **Configuration File**: Support for .psfguardrc configuration
 5. **Extended Filtering**: More complex queries (date ranges, multiple statuses)
 6. **Machine Learning**: Train models on accepted/rejected images for better detection
 7. **Real-time Monitoring**: Watch mode for live sessions

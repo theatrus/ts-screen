@@ -1,13 +1,13 @@
 [package]
-name = "ts-screen"
+name = "psf-guard"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.89.0"
 authors = ["Yann Ramin <github@theatr.us>"]
-description = "A tool to analyze N.I.N.A. Target Scheduler telescope imaging database"
+description = "PSF Guard: Astronomical image analysis and quality assessment tool for N.I.N.A. and FITS files"
 license = "Apache-2.0"
-repository = "https://github.com/theatrus/ts-screen"
-homepage = "https://github.com/theatrus/ts-screen"
+repository = "https://github.com/theatrus/psf-guard"
+homepage = "https://github.com/theatrus/psf-guard"
 readme = "README.md"
 keywords = ["astronomy", "telescope", "imaging", "analysis", "nina"]
 categories = ["command-line-utilities", "science"]
