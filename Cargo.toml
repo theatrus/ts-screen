@@ -2,6 +2,7 @@
 name = "ts-screen"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.89.0"
 authors = ["Yann Ramin <github@theatr.us>"]
 description = "A tool to analyze N.I.N.A. Target Scheduler telescope imaging database"
 license = "Apache-2.0"

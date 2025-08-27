@@ -21,7 +21,7 @@ TS-Screen (N.I.N.A Target Scheduler Plugin File Screener) provides tools to:
 ## Installation
 
 ### Prerequisites
-- Rust 1.70 or higher
+- Rust 1.89.0 (see rust-toolchain.toml)
 - SQLite3
 
 ### Building from Source

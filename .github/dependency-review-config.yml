@@ -1,0 +1,35 @@
+# Dependency Review Configuration
+# https://github.com/actions/dependency-review-action
+
+# Possible values: "critical", "high", "moderate", "low"
+fail-on-severity: moderate
+
+# You can only include one of these two options: `allow-licenses` and `deny-licenses`
+# ([String]). Only allow these licenses (optional)
+# allow-licenses:
+#   - MIT
+#   - Apache-2.0
+#   - BSD-3-Clause
+
+# ([String]). Block the pull request on these licenses (optional)
+deny-licenses:
+  - GPL-2.0
+  - GPL-3.0
+  - AGPL-3.0
+  - CC-BY-NC-4.0
+
+# Possible values: "safe", "generate", "clear"
+comment-summary-in-pr: safe
+
+# Block pull requests that introduce vulnerabilities in the scopes that match this list
+# (optional, defaults to all scopes)
+# The possible values are the source, ecosystem and package scope fields in the GitHub
+# Advisory Database. Only exact, case-insensitive matches are supported.
+# Examples: "pip", "rust", "npm", "cargo"
+vulnerable-check: true
+
+# Allow a specified number of vulnerabilities of a certain severity level
+# (Example: 5 moderate, 2 high)
+# allow-vulnerabilities:
+#   moderate: 5
+#   high: 2
