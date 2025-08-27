@@ -126,6 +126,24 @@ pub enum Commands {
         #[arg(short, long, default_value = "table")]
         format: String,
     },
+
+    /// Analyze FITS images and compare computed statistics with database values
+    AnalyzeFits {
+        /// Path to FITS file or directory containing FITS files
+        path: String,
+
+        /// Filter by project name
+        #[arg(short, long)]
+        project: Option<String>,
+
+        /// Filter by target name
+        #[arg(short, long)]
+        target: Option<String>,
+
+        /// Output format (table, json, csv)
+        #[arg(short, long, default_value = "table")]
+        format: String,
+    },
 }
 
 #[derive(Parser, Debug, Clone)]

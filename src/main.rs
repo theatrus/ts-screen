@@ -7,13 +7,14 @@ mod commands;
 mod db;
 mod fits;
 mod grading;
+mod image_analysis;
 mod models;
 mod utils;
 
 use cli::{Cli, Commands};
 use commands::{
-    dump_grading_results, filter_rejected_files, list_projects, list_targets, read_fits,
-    regrade_images, show_images, update_grade,
+    analyze_fits_and_compare, dump_grading_results, filter_rejected_files, list_projects,
+    list_targets, read_fits, regrade_images, show_images, update_grade,
 };
 
 fn main() -> Result<()> {
@@ -85,6 +86,16 @@ fn main() -> Result<()> {
             format,
         } => {
             read_fits(&path, verbose, &format)?;
+        }
+        Commands::AnalyzeFits {
+            path,
+            project,
+            target,
+            format,
+        } => {
+            let conn = Connection::open(&cli.database)
+                .with_context(|| format!("Failed to open database: {}", cli.database))?;
+            analyze_fits_and_compare(&conn, &path, project, target, &format)?;
         }
     }
 

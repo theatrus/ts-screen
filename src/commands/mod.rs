@@ -1,3 +1,4 @@
+pub mod analyze_fits;
 pub mod dump_grading;
 pub mod filter_rejected;
 pub mod list_projects;
@@ -7,6 +8,7 @@ pub mod regrade;
 pub mod show_images;
 pub mod update_grade;
 
+pub use analyze_fits::analyze_fits_and_compare;
 pub use dump_grading::dump_grading_results;
 pub use filter_rejected::filter_rejected_files;
 pub use list_projects::list_projects;
