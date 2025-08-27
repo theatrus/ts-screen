@@ -10,46 +10,47 @@ mod utils;
 
 use cli::{Cli, Commands};
 use commands::{
-    dump_grading_results,
-    filter_rejected_files,
-    list_projects,
-    list_targets,
-    regrade_images,
+    dump_grading_results, filter_rejected_files, list_projects, list_targets, regrade_images,
 };
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    
+
     match cli.command {
-        Commands::DumpGrading { status, project, target, format } => {
+        Commands::DumpGrading {
+            status,
+            project,
+            target,
+            format,
+        } => {
             let conn = Connection::open(&cli.database)
                 .with_context(|| format!("Failed to open database: {}", cli.database))?;
             dump_grading_results(&conn, status, project, target, &format)?;
-        },
+        }
         Commands::ListProjects => {
             let conn = Connection::open(&cli.database)
                 .with_context(|| format!("Failed to open database: {}", cli.database))?;
             list_projects(&conn)?;
-        },
+        }
         Commands::ListTargets { project } => {
             let conn = Connection::open(&cli.database)
                 .with_context(|| format!("Failed to open database: {}", cli.database))?;
             list_targets(&conn, &project)?;
-        },
-        Commands::FilterRejected { 
-            database, 
-            base_dir, 
-            dry_run, 
-            project, 
+        }
+        Commands::FilterRejected {
+            database,
+            base_dir,
+            dry_run,
+            project,
             target,
             stat_options,
         } => {
             let conn = Connection::open(&database)
                 .with_context(|| format!("Failed to open database: {}", database))?;
-            
+
             let stat_config = stat_options.to_grading_config();
             filter_rejected_files(&conn, &base_dir, dry_run, project, target, stat_config)?;
-        },
+        }
         Commands::Regrade {
             database,
             dry_run,
@@ -61,11 +62,11 @@ fn main() -> Result<()> {
         } => {
             let conn = Connection::open(&database)
                 .with_context(|| format!("Failed to open database: {}", database))?;
-            
+
             let stat_config = stat_options.to_grading_config();
             regrade_images(&conn, dry_run, target, project, days, &reset, stat_config)?;
-        },
+        }
     }
-    
+
     Ok(())
 }
