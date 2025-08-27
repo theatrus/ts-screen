@@ -5,14 +5,15 @@ use rusqlite::Connection;
 mod cli;
 mod commands;
 mod db;
+mod fits;
 mod grading;
 mod models;
 mod utils;
 
 use cli::{Cli, Commands};
 use commands::{
-    dump_grading_results, filter_rejected_files, list_projects, list_targets, regrade_images,
-    show_images, update_grade,
+    dump_grading_results, filter_rejected_files, list_projects, list_targets, read_fits,
+    regrade_images, show_images, update_grade,
 };
 
 fn main() -> Result<()> {
@@ -77,6 +78,9 @@ fn main() -> Result<()> {
             let conn = Connection::open(&cli.database)
                 .with_context(|| format!("Failed to open database: {}", cli.database))?;
             update_grade(&conn, id, &status, reason)?;
+        }
+        Commands::ReadFits { path, verbose, format } => {
+            read_fits(&path, verbose, &format)?;
         }
     }
 

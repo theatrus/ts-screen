@@ -112,6 +112,20 @@ pub enum Commands {
         #[arg(short, long)]
         reason: Option<String>,
     },
+
+    /// Read and display metadata from FITS files
+    ReadFits {
+        /// Path to FITS file or directory containing FITS files
+        path: String,
+
+        /// Show verbose output with all headers
+        #[arg(short, long)]
+        verbose: bool,
+
+        /// Output format (table, json, csv)
+        #[arg(short, long, default_value = "table")]
+        format: String,
+    },
 }
 
 #[derive(Parser, Debug, Clone)]

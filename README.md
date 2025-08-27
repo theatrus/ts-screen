@@ -16,6 +16,7 @@ TS-Screen (N.I.N.A Target Scheduler Plugin File Screener) provides tools to:
 - Query and analyze image grading results from N.I.N.A. Target Scheduler SQLite databases
 - List projects and targets with their imaging statistics
 - Filter and organize rejected image files based on database grading status
+- Read and display metadata from FITS astronomical image files
 - Support multiple directory structures for image organization
 
 ## Installation
@@ -63,6 +64,25 @@ ts-screen dump-grading --target "North American"
 
 # Output formats (table, json, csv)
 ts-screen dump-grading --format json
+```
+
+### Read FITS File Metadata
+
+Display metadata from FITS astronomical image files:
+
+```bash
+# Read a single FITS file
+ts-screen read-fits image.fits
+
+# Read all FITS files in a directory (recursive)
+ts-screen read-fits /path/to/fits/directory
+
+# Show all header keywords (verbose mode)
+ts-screen read-fits --verbose image.fits
+
+# Output formats (table, json, csv)
+ts-screen read-fits --format json image.fits
+ts-screen read-fits --format csv /path/to/fits/directory
 ```
 
 ### Filter Rejected Files
@@ -183,6 +203,16 @@ Options:
 - `--cloud-threshold <THRESHOLD>`: Percentage threshold for cloud detection (default: 0.2 = 20% change)
 - `--cloud-baseline-count <COUNT>`: Number of images needed to establish baseline after cloud event (default: 5)
 
+#### read-fits
+Read and display metadata from FITS files
+
+Arguments:
+- `<PATH>`: Path to FITS file or directory containing FITS files
+
+Options:
+- `-v, --verbose`: Show verbose output with all headers
+- `-f, --format <FORMAT>`: Output format (table, json, csv) [default: table]
+
 #### regrade
 Regrade images in the database based on statistical analysis
 
@@ -239,6 +269,19 @@ ts-screen regrade mydb.sqlite --dry-run --reset automatic --enable-statistical -
 
 # Reset all grades for a specific target
 ts-screen regrade mydb.sqlite --dry-run --reset all --target "M31" --days 7
+
+# Analyze FITS file metadata
+ts-screen read-fits "image.fits"
+
+# Check all FITS files in a directory
+ts-screen read-fits "/path/to/fits/files/"
+
+# Show all header keywords for debugging
+ts-screen read-fits --verbose "image.fits"
+
+# Export FITS metadata to JSON or CSV for analysis
+ts-screen read-fits --format json "/path/to/fits/files/" > metadata.json
+ts-screen read-fits --format csv "/path/to/fits/files/" > metadata.csv
 ```
 
 ## License
