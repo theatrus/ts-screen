@@ -21,3 +21,23 @@ anyhow = "1.0"
 chrono = "0.4"
 regex = "1.11"
 byteorder = "1.5"
+fitrs = "0.5"
+bumpalo = { version = "3.16", features = ["collections"] }
+
+[profile.release]
+# Enable maximum optimizations for performance
+opt-level = 3
+# Enable link-time optimization
+lto = true
+# Set number of codegen units to 1 for better optimization
+codegen-units = 1
+# Enable panic unwinding to be optimized away in release builds
+panic = 'abort'
+# Allow aggressive loop optimizations and auto-vectorization
+overflow-checks = false
+
+[profile.dev]
+# Keep some optimizations in debug builds for reasonable performance during development
+opt-level = 1
+# Disable overflow checks in dev for performance (be careful with this)
+overflow-checks = false

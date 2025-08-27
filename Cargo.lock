@@ -200,6 +200,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
 
 [[package]]
+name = "fitrs"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f6ad8c9d4e2bd7b2e535a7c72bfd61f43945e79e8937caff19a061b55347134"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
 name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -345,9 +354,11 @@ name = "psf-guard"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bumpalo",
  "byteorder",
  "chrono",
  "clap",
+ "fitrs",
  "regex",
  "rusqlite",
  "serde",
