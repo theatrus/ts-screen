@@ -1,1 +1,46 @@
-/target
+# Rust artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Project-specific files
+*.sqlite
+*.sqlite3
+*.db
+*.fits
+*.fit
+test_files/
+test_output/
+
+# Backup files
+*.backup
+*.bak
+*.tmp
+
+# Log files
+*.log
+
+# Coverage files
+*.profraw
+*.profdata
+/coverage/
+
+# Documentation build
+/target/doc/
+
+# Temporary directories
+/tmp/
+/temp/
