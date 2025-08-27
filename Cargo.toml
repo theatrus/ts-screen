@@ -2,12 +2,20 @@
 name = "ts-screen"
 version = "0.1.0"
 edition = "2021"
+authors = ["Yann Ramin <github@theatr.us>"]
+description = "A tool to analyze N.I.N.A. Target Scheduler telescope imaging database"
+license = "Apache-2.0"
+repository = "https://github.com/theatrus/ts-screen"
+homepage = "https://github.com/theatrus/ts-screen"
+readme = "README.md"
+keywords = ["astronomy", "telescope", "imaging", "analysis", "nina"]
+categories = ["command-line-utilities", "science"]
 
 [dependencies]
-clap = { version = "4.5", features = ["derive"] }
-rusqlite = { version = "0.32", features = ["bundled"] }
+clap = { version = "4", features = ["derive"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 anyhow = "1.0"
 chrono = "0.4"
-regex = "1.10"
+regex = "1.11"

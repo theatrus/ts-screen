@@ -1,5 +1,8 @@
 # N.I.N.A Target Scheduler Plugin File Screener (ts-screen)
 
+[![CI](https://github.com/theatrus/ts-screen/actions/workflows/ci.yml/badge.svg)](https://github.com/theatrus/ts-screen/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 A Rust utility for analyzing N.I.N.A. (Nighttime Imaging 'N' Astronomy) Target Scheduler plugin databases and managing rejected astronomical image files.
 
 ## Documentation
@@ -23,7 +26,7 @@ TS-Screen (N.I.N.A Target Scheduler Plugin File Screener) provides tools to:
 
 ### Building from Source
 ```bash
-git clone https://github.com/yourusername/ts-screen.git
+git clone https://github.com/theatrus/ts-screen.git
 cd ts-screen
 cargo build --release
 ```
@@ -240,8 +243,8 @@ ts-screen regrade mydb.sqlite --dry-run --reset all --target "M31" --days 7
 
 ## License
 
-[Your chosen license]
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
 
 ## Contributing
 
-[Contribution guidelines if applicable]
+Contributions are welcome! Please feel free to submit a Pull Request.
