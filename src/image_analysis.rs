@@ -177,8 +177,8 @@ impl FitsImage {
         })
     }
 
-    /// Calculate basic image statistics
-    pub fn calculate_statistics(&self) -> ImageStatistics {
+    /// Calculate basic statistics without star detection
+    pub fn calculate_basic_statistics(&self) -> ImageStatistics {
         // Use arena for temporary allocation
         let arena = Bump::new();
         let mut sorted_data = bumpalo::vec![in &arena];
@@ -203,8 +203,29 @@ impl FitsImage {
         let min = sorted_data[0] as f64;
         let max = sorted_data[sorted_data.len() - 1] as f64;
 
-        // Detect stars and calculate HFR
-        let stars = self.detect_stars();
+        ImageStatistics {
+            width: self.width,
+            height: self.height,
+            mean,
+            median,
+            std_dev,
+            min,
+            max,
+            star_count: None,
+            hfr: None,
+            fwhm: None,
+        }
+    }
+    
+    /// Calculate basic image statistics
+    pub fn calculate_statistics(&self) -> ImageStatistics {
+        let stats = self.calculate_basic_statistics();
+        
+        // Apply MTF stretch before star detection (N.I.N.A. behavior)
+        let stretched_data = self.apply_nina_stretch(&stats);
+        
+        // Detect stars on stretched data
+        let stars = self.detect_stars_on_data(&stretched_data);
         let star_count = Some(stars.len());
         let hfr = if !stars.is_empty() {
             Some(stars.iter().map(|s| s.hfr).sum::<f64>() / stars.len() as f64)
@@ -220,15 +241,24 @@ impl FitsImage {
         ImageStatistics {
             width: self.width,
             height: self.height,
-            mean,
-            median,
-            std_dev,
-            min,
-            max,
+            mean: stats.mean,
+            median: stats.median,
+            std_dev: stats.std_dev,
+            min: stats.min,
+            max: stats.max,
             star_count,
             hfr,
             fwhm,
         }
+    }
+    
+    /// Apply N.I.N.A.'s MTF stretch to image data
+    fn apply_nina_stretch(&self, statistics: &ImageStatistics) -> Vec<u16> {
+        use crate::mtf_stretch::{stretch_image, StretchParameters};
+        
+        // Use N.I.N.A. default stretch parameters
+        let params = StretchParameters::default();
+        stretch_image(&self.data, statistics, params.factor, params.black_clipping)
     }
 
     /// Convert 16-bit image to 8-bit for processing
@@ -440,11 +470,29 @@ impl FitsImage {
     
     /// Detect stars using N.I.N.A.'s exact algorithm  
     pub fn detect_stars(&self) -> Vec<StarDetection> {
-        use crate::nina_star_detection::{detect_stars, StarDetectionParams};
+        // First calculate statistics and apply stretch
+        let stats = self.calculate_basic_statistics();
+        let stretched_data = self.apply_nina_stretch(&stats);
+        self.detect_stars_on_data(&stretched_data)
+    }
+    
+    /// Detect stars on provided data (can be stretched or raw)
+    fn detect_stars_on_data(&self, data: &[u16]) -> Vec<StarDetection> {
+        use crate::nina_star_detection::{detect_stars_with_original, StarDetectionParams, StarSensitivity};
         
         // Use N.I.N.A. star detection with default parameters
-        let params = StarDetectionParams::default();
-        let result = detect_stars(&self.data, self.width, self.height, &params);
+        let mut params = StarDetectionParams::default();
+        params.sensitivity = StarSensitivity::High; // N.I.N.A. default is High
+        
+        // Use stretched data for detection but original raw data for HFR measurement
+        // This matches N.I.N.A.'s behavior
+        let result = detect_stars_with_original(
+            data,           // Detection data (stretched)
+            &self.data,     // Original raw data for HFR calculation
+            self.width, 
+            self.height, 
+            &params
+        );
         
         // Convert N.I.N.A. results to our StarDetection format
         result.star_list.into_iter().map(|star| {

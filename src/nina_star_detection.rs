@@ -46,8 +46,9 @@ pub enum NoiseReduction {
 }
 
 /// Internal state for star detection
-struct DetectionState {
-    pub iarr: Vec<u16>,  // Original 16-bit image data
+struct DetectionState<'a> {
+    pub detection_data: &'a [u16], // Data used for detection (can be stretched)
+    pub original_data: &'a [u16],  // Original raw data for HFR calculation
     pub width: usize,
     pub height: usize,
     pub resize_factor: f64,
@@ -106,15 +107,28 @@ pub fn detect_stars(
     height: usize,
     params: &StarDetectionParams,
 ) -> StarDetectionResult {
-    // Step 1: Get initial state
-    let state = get_initial_state(image_data_16bit, width, height, params);
+    detect_stars_with_original(image_data_16bit, image_data_16bit, width, height, params)
+}
+
+/// Star detection with separate detection and measurement data
+/// This matches N.I.N.A.'s behavior where detection uses stretched data
+/// but HFR measurement uses original raw data
+pub fn detect_stars_with_original(
+    detection_data_16bit: &[u16],  // Data for edge detection (can be stretched)
+    original_data_16bit: &[u16],   // Original raw data for HFR calculation
+    width: usize,
+    height: usize,
+    params: &StarDetectionParams,
+) -> StarDetectionResult {
+    // Step 1: Get initial state using both detection and original data
+    let state = get_initial_state(detection_data_16bit, original_data_16bit, width, height, params);
     
-    // Step 2: Convert 16bpp to 8bpp
-    let image_8bit = ImageUtility::convert_16bpp_to_8bpp(&state.iarr);
+    // Step 2: Convert 16bpp to 8bpp for edge detection
+    let image_8bit = ImageUtility::convert_16bpp_to_8bpp(detection_data_16bit);
     
     // Step 3: Noise reduction (if enabled)
     let mut bitmap_to_analyze = if params.noise_reduction != NoiseReduction::None {
-        reduce_noise(&image_8bit, width, height, params.noise_reduction)
+        reduce_noise(&image_8bit, state.width, state.height, params.noise_reduction)
     } else {
         image_8bit
     };
@@ -161,12 +175,13 @@ pub fn detect_stars(
     result
 }
 
-fn get_initial_state(
-    image_data: &[u16],
+fn get_initial_state<'a>(
+    detection_data: &'a [u16],
+    original_data: &'a [u16],
     width: usize,
     height: usize,
     params: &StarDetectionParams,
-) -> DetectionState {
+) -> DetectionState<'a> {
     let mut resize_factor = 1.0;
     
     if width > MAX_WIDTH {
@@ -189,7 +204,8 @@ fn get_initial_state(
     let max_star_size = (150.0 * resize_factor).ceil() as usize;
     
     DetectionState {
-        iarr: image_data.to_vec(),
+        detection_data,
+        original_data,
         width,
         height,
         resize_factor,
@@ -424,7 +440,7 @@ fn analyze_star_pixels(
     for y in large_rect.y..(large_rect.y + large_rect.height) {
         for x in large_rect.x..(large_rect.x + large_rect.width) {
             if x >= 0 && y >= 0 && (x as usize) < state.width && (y as usize) < state.height {
-                let pixel_value = state.iarr[(y as usize) * state.width + (x as usize)] as f64;
+                let pixel_value = state.original_data[(y as usize) * state.width + (x as usize)] as f64;
                 
                 // Check if in star rectangle
                 if x >= star.rectangle.x && x < star.rectangle.x + star.rectangle.width
@@ -463,7 +479,7 @@ fn analyze_star_pixels(
         for x in star.rectangle.x..(star.rectangle.x + star.rectangle.width) {
             if x >= 0 && y >= 0 && (x as usize) < state.width && (y as usize) < state.height {
                 if inside_circle(x as f64, y as f64, star.position.0, star.position.1, star.radius) {
-                    let pixel_value = state.iarr[(y as usize) * state.width + (x as usize)] as f64;
+                    let pixel_value = state.original_data[(y as usize) * state.width + (x as usize)] as f64;
                     if pixel_value > bright_pixel_threshold {
                         inner_star_bright_pixels += 1;
                     }
@@ -492,7 +508,7 @@ fn calculate_star_hfr(state: &DetectionState, mut star: Star) -> Star {
     for y in star.rectangle.y..(star.rectangle.y + star.rectangle.height) {
         for x in star.rectangle.x..(star.rectangle.x + star.rectangle.width) {
             if x >= 0 && y >= 0 && (x as usize) < state.width && (y as usize) < state.height {
-                let pixel_value = state.iarr[(y as usize) * state.width + (x as usize)] as f64;
+                let pixel_value = state.original_data[(y as usize) * state.width + (x as usize)] as f64;
                 
                 // N.I.N.A.'s exact background subtraction: Math.Round(value - SurroundingMean)
                 let mut value = (pixel_value - star.surrounding_mean).round();

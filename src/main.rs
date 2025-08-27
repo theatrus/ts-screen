@@ -12,6 +12,7 @@ mod models;
 mod utils;
 mod accord_imaging;
 mod nina_star_detection;
+mod mtf_stretch;
 
 use cli::{Cli, Commands};
 use commands::{
