@@ -18,8 +18,8 @@ deny-licenses:
   - AGPL-3.0
   - CC-BY-NC-4.0
 
-# Possible values: "safe", "generate", "clear"
-comment-summary-in-pr: safe
+# Possible values: "always", "never", "on-failure"
+comment-summary-in-pr: on-failure
 
 # Block pull requests that introduce vulnerabilities in the scopes that match this list
 # (optional, defaults to all scopes)
