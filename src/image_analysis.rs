@@ -95,7 +95,8 @@ impl FitsImage {
         };
         
         // Get BZERO and BSCALE for data scaling (FITS standard)
-        let bzero = match hdu.value("BZERO") {
+        // Note: We read these values but don't apply them to match NINA's behavior
+        let _bzero = match hdu.value("BZERO") {
             Some(val) => match val {
                 fitrs::HeaderValue::IntegerNumber(n) => *n as f64,
                 fitrs::HeaderValue::RealFloatingNumber(f) => *f,
@@ -104,7 +105,7 @@ impl FitsImage {
             None => 0.0,
         };
         
-        let bscale = match hdu.value("BSCALE") {
+        let _bscale = match hdu.value("BSCALE") {
             Some(val) => match val {
                 fitrs::HeaderValue::IntegerNumber(n) => *n as f64,
                 fitrs::HeaderValue::RealFloatingNumber(f) => *f,
@@ -122,7 +123,9 @@ impl FitsImage {
         // Read image data
         let fits_data = hdu.read_data();
         
-        // Convert to u16 based on data type, applying FITS scaling (Actual = BSCALE * Raw + BZERO)
+        // Convert to u16 based on data type
+        // IMPORTANT: N.I.N.A. uses raw values, NOT scaled values
+        // So we ignore BZERO and BSCALE for star detection compatibility
         let data: Vec<u16> = match fits_data {
             FitsData::Characters(_) => {
                 return Err(anyhow::anyhow!("FITS file contains character data, not image data"));
@@ -130,8 +133,11 @@ impl FitsImage {
             FitsData::IntegersI32(FitsDataArray { data, .. }) => {
                 data.into_iter().map(|x| {
                     if let Some(raw_val) = x {
-                        let scaled_val = bscale * (raw_val as f64) + bzero;
-                        scaled_val.max(0.0).min(65535.0) as u16
+                        // For signed 16-bit data stored as i32, convert to unsigned
+                        // This handles FITS files with BITPIX=16 and BZERO=32768
+                        // The raw values range from -32768 to 32767
+                        // We add 32768 to get unsigned 0 to 65535
+                        ((raw_val + 32768).max(0).min(65535)) as u16
                     } else {
                         0u16
                     }
@@ -140,8 +146,9 @@ impl FitsImage {
             FitsData::IntegersU32(FitsDataArray { data, .. }) => {
                 data.into_iter().map(|x| {
                     if let Some(raw_val) = x {
-                        let scaled_val = bscale * (raw_val as f64) + bzero;
-                        scaled_val.max(0.0).min(65535.0) as u16
+                        // Use raw value directly, not scaled
+                        // N.I.N.A. compatibility: ignore BZERO/BSCALE
+                        raw_val.min(65535) as u16
                     } else {
                         0u16
                     }
@@ -149,14 +156,16 @@ impl FitsImage {
             },
             FitsData::FloatingPoint32(FitsDataArray { data, .. }) => {
                 data.into_iter().map(|x| {
-                    let scaled_val = bscale * (x as f64) + bzero;
-                    scaled_val.max(0.0).min(65535.0) as u16
+                    // For float data, still need to convert but don't apply BZERO/BSCALE
+                    // to match N.I.N.A. behavior
+                    x.max(0.0).min(65535.0) as u16
                 }).collect()
             },
             FitsData::FloatingPoint64(FitsDataArray { data, .. }) => {
                 data.into_iter().map(|x| {
-                    let scaled_val = bscale * x + bzero;
-                    scaled_val.max(0.0).min(65535.0) as u16
+                    // For float data, still need to convert but don't apply BZERO/BSCALE
+                    // to match N.I.N.A. behavior
+                    x.max(0.0).min(65535.0) as u16
                 }).collect()
             },
         };
@@ -491,7 +500,7 @@ impl FitsImage {
     }
     
     /// Calculate MAD using N.I.N.A.'s histogram approach
-    fn calculate_mad_from_histogram(&self, sorted_data: &[u16], median: f64) -> f64 {
+    fn calculate_mad_from_histogram(&self, _sorted_data: &[u16], median: f64) -> f64 {
         // Build histogram of pixel values
         let mut pixel_counts = vec![0u32; 65536];
         for &val in self.data.iter() {
