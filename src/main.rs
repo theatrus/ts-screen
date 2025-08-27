@@ -4,6 +4,7 @@ use rusqlite::Connection;
 
 mod cli;
 mod commands;
+mod db;
 mod grading;
 mod models;
 mod utils;
@@ -11,6 +12,7 @@ mod utils;
 use cli::{Cli, Commands};
 use commands::{
     dump_grading_results, filter_rejected_files, list_projects, list_targets, regrade_images,
+    show_images, update_grade,
 };
 
 fn main() -> Result<()> {
@@ -65,6 +67,16 @@ fn main() -> Result<()> {
 
             let stat_config = stat_options.to_grading_config();
             regrade_images(&conn, dry_run, target, project, days, &reset, stat_config)?;
+        }
+        Commands::ShowImages { ids } => {
+            let conn = Connection::open(&cli.database)
+                .with_context(|| format!("Failed to open database: {}", cli.database))?;
+            show_images(&conn, &ids)?;
+        }
+        Commands::UpdateGrade { id, status, reason } => {
+            let conn = Connection::open(&cli.database)
+                .with_context(|| format!("Failed to open database: {}", cli.database))?;
+            update_grade(&conn, id, &status, reason)?;
         }
     }
 

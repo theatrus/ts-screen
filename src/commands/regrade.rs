@@ -1,7 +1,8 @@
+use crate::db::Database;
 use crate::grading;
-use crate::models::AcquiredImage;
+use crate::models::GradingStatus;
 use anyhow::Result;
-use rusqlite::{params, Connection};
+use rusqlite::Connection;
 
 pub fn regrade_images(
     conn: &Connection,
@@ -23,6 +24,8 @@ pub fn regrade_images(
         }
     }
 
+    let db = Database::new(conn);
+
     println!(
         "{}Regrading images...",
         if dry_run { "[DRY RUN] " } else { "" }
@@ -35,28 +38,58 @@ pub fn regrade_images(
 
     println!("  Date range: {} to now", cutoff_date.format("%Y-%m-%d"));
 
-    // First, handle reset if requested
-    if reset_mode != "none" {
-        handle_reset(
-            conn,
-            dry_run,
-            reset_mode,
-            cutoff_timestamp,
-            &project_filter,
-            &target_filter,
-        )?;
-    }
+    // Wrap all operations in a transaction for consistency
+    if !dry_run && (reset_mode != "none" || stat_config.is_some()) {
+        db.with_transaction(|_tx| {
+            // First, handle reset if requested
+            if reset_mode != "none" {
+                handle_reset(
+                    &db,
+                    false, // Not a dry run inside transaction
+                    reset_mode,
+                    cutoff_timestamp,
+                    &project_filter,
+                    &target_filter,
+                )?;
+            }
 
-    // Now perform statistical grading if enabled
-    if let Some(config) = stat_config {
-        perform_statistical_grading(
-            conn,
-            dry_run,
-            cutoff_timestamp,
-            &project_filter,
-            &target_filter,
-            config,
-        )?;
+            // Now perform statistical grading if enabled
+            if let Some(config) = stat_config {
+                perform_statistical_grading(
+                    &db,
+                    false, // Not a dry run inside transaction
+                    cutoff_timestamp,
+                    &project_filter,
+                    &target_filter,
+                    config,
+                )?;
+            }
+
+            Ok(())
+        })?;
+    } else if dry_run {
+        // For dry runs, execute without transaction
+        if reset_mode != "none" {
+            handle_reset(
+                &db,
+                dry_run,
+                reset_mode,
+                cutoff_timestamp,
+                &project_filter,
+                &target_filter,
+            )?;
+        }
+
+        if let Some(config) = stat_config {
+            perform_statistical_grading(
+                &db,
+                dry_run,
+                cutoff_timestamp,
+                &project_filter,
+                &target_filter,
+                config,
+            )?;
+        }
     }
 
     println!("\nRegrading complete.");
@@ -69,7 +102,7 @@ pub fn regrade_images(
 }
 
 fn handle_reset(
-    conn: &Connection,
+    db: &Database,
     dry_run: bool,
     reset_mode: &str,
     cutoff_timestamp: i64,
@@ -78,47 +111,21 @@ fn handle_reset(
 ) -> Result<()> {
     println!("  Reset mode: {}", reset_mode);
 
-    let mut reset_query = String::from(
-        "UPDATE acquiredimage 
-         SET gradingStatus = 0, rejectreason = NULL 
-         WHERE acquireddate >= ?",
-    );
-
-    let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(cutoff_timestamp)];
-
-    // Add filters
-    if let Some(project) = project_filter {
-        reset_query.push_str(" AND projectId IN (SELECT Id FROM project WHERE name LIKE ?)");
-        params.push(Box::new(format!("%{}%", project)));
-    }
-
-    if let Some(target) = target_filter {
-        reset_query.push_str(" AND targetId IN (SELECT Id FROM target WHERE name LIKE ?)");
-        params.push(Box::new(format!("%{}%", target)));
-    }
-
-    // For automatic mode, only reset non-manual rejections
-    if reset_mode == "automatic" {
-        // Assume manual rejections have specific reject reasons
-        // Also include previously auto-rejected items
-        reset_query.push_str(" AND (gradingStatus = 2 AND (rejectreason IS NULL OR rejectreason LIKE '%[Auto]%' OR (rejectreason NOT LIKE '%Manual%' AND rejectreason NOT LIKE '%manual%')))");
-    }
-
     if dry_run {
-        // Count how many would be reset
-        let count_query = reset_query.replace(
-            "UPDATE acquiredimage SET gradingStatus = 0, rejectreason = NULL",
-            "SELECT COUNT(*) FROM acquiredimage",
-        );
-        let mut stmt = conn.prepare(&count_query)?;
-        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-        let count: i32 = stmt
-            .query_row(param_refs.as_slice(), |row| row.get(0))
-            .unwrap_or(0);
+        let count = db.count_images_to_reset(
+            reset_mode,
+            cutoff_timestamp,
+            project_filter.as_deref(),
+            target_filter.as_deref(),
+        )?;
         println!("  Would reset {} images to pending status", count);
     } else {
-        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-        let affected = conn.execute(&reset_query, param_refs.as_slice())?;
+        let affected = db.reset_grading_status(
+            reset_mode,
+            cutoff_timestamp,
+            project_filter.as_deref(),
+            target_filter.as_deref(),
+        )?;
         println!("  Reset {} images to pending status", affected);
     }
 
@@ -126,7 +133,7 @@ fn handle_reset(
 }
 
 fn perform_statistical_grading(
-    conn: &Connection,
+    db: &Database,
     dry_run: bool,
     cutoff_timestamp: i64,
     project_filter: &Option<String>,
@@ -135,57 +142,13 @@ fn perform_statistical_grading(
 ) -> Result<()> {
     println!("\nPerforming statistical analysis...");
 
-    // Query for images in date range
-    let mut query = String::from(
-        "SELECT ai.Id, ai.projectId, ai.targetId, ai.acquireddate, ai.filtername, 
-                ai.gradingStatus, ai.metadata, ai.rejectreason, ai.profileId,
-                p.name as project_name, t.name as target_name
-         FROM acquiredimage ai
-         JOIN project p ON ai.projectId = p.Id
-         JOIN target t ON ai.targetId = t.Id
-         WHERE ai.acquireddate >= ?",
-    );
-
-    let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(cutoff_timestamp)];
-
-    if let Some(project) = project_filter {
-        query.push_str(" AND p.name LIKE ?");
-        params.push(Box::new(format!("%{}%", project)));
-    }
-
-    if let Some(target) = target_filter {
-        query.push_str(" AND t.name LIKE ?");
-        params.push(Box::new(format!("%{}%", target)));
-    }
-
-    query.push_str(" ORDER BY ai.acquireddate DESC");
-
-    let mut stmt = conn.prepare(&query)?;
-    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-
-    let image_iter = stmt.query_map(param_refs.as_slice(), |row| {
-        Ok((
-            AcquiredImage {
-                id: row.get(0)?,
-                project_id: row.get(1)?,
-                target_id: row.get(2)?,
-                acquired_date: row.get(3)?,
-                filter_name: row.get(4)?,
-                grading_status: row.get(5)?,
-                metadata: row.get(6)?,
-                reject_reason: row.get(7)?,
-                profile_id: row.get(8)?,
-            },
-            row.get::<_, String>(9)?,  // project_name
-            row.get::<_, String>(10)?, // target_name
-        ))
-    })?;
-
-    // Collect all images
-    let mut all_images = Vec::new();
-    for image_result in image_iter {
-        all_images.push(image_result?);
-    }
+    // Get all images in date range
+    let all_images = db.query_images(
+        None,
+        project_filter.as_deref(),
+        target_filter.as_deref(),
+        Some(cutoff_timestamp),
+    )?;
 
     println!("  Analyzing {} images", all_images.len());
 
@@ -215,7 +178,7 @@ fn perform_statistical_grading(
             println!("  Found {} statistical rejections", rejections.len());
 
             if dry_run {
-                // Show what would be updated
+                // Just show what would be rejected
                 for rejection in &rejections {
                     println!(
                         "    Would reject image {}: {} - {}",
@@ -223,22 +186,21 @@ fn perform_statistical_grading(
                     );
                 }
             } else {
-                // Update database with rejections
-                let update_query =
-                    "UPDATE acquiredimage SET gradingStatus = 2, rejectreason = ? WHERE Id = ?";
-                let mut updated_count = 0;
+                // Build updates list
+                let updates: Vec<(i32, GradingStatus, Option<String>)> = rejections
+                    .iter()
+                    .map(|r| {
+                        (
+                            r.image_id,
+                            GradingStatus::Rejected,
+                            Some(format!("[Auto] {} - {}", r.reason, r.details)),
+                        )
+                    })
+                    .collect();
 
-                for rejection in rejections {
-                    let reason = format!("[Auto] {} - {}", rejection.reason, rejection.details);
-                    match conn.execute(update_query, params![reason, rejection.image_id]) {
-                        Ok(_) => updated_count += 1,
-                        Err(e) => {
-                            println!("    Error updating image {}: {}", rejection.image_id, e)
-                        }
-                    }
-                }
-
-                println!("  Updated {} images with rejection status", updated_count);
+                // Apply updates
+                db.batch_update_grading_status(&updates)?;
+                println!("  Applied {} rejections", updates.len());
             }
         }
         Err(e) => println!("  Warning: Statistical analysis failed: {}", e),

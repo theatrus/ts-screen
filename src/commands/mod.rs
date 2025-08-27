@@ -3,9 +3,13 @@ pub mod filter_rejected;
 pub mod list_projects;
 pub mod list_targets;
 pub mod regrade;
+pub mod show_images;
+pub mod update_grade;
 
 pub use dump_grading::dump_grading_results;
 pub use filter_rejected::filter_rejected_files;
 pub use list_projects::list_projects;
 pub use list_targets::list_targets;
 pub use regrade::regrade_images;
+pub use show_images::show_images;
+pub use update_grade::update_grade;

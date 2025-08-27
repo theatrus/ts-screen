@@ -31,7 +31,7 @@ pub struct AcquiredImage {
     pub profile_id: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 #[allow(dead_code)]
 pub enum GradingStatus {
     Pending = 0,

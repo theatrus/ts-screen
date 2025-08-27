@@ -1,23 +1,11 @@
-use crate::models::Project;
+use crate::db::Database;
 use crate::utils::truncate_string;
 use anyhow::Result;
 use rusqlite::Connection;
 
 pub fn list_projects(conn: &Connection) -> Result<()> {
-    let mut stmt = conn.prepare(
-        "SELECT Id, profileId, name, description 
-         FROM project 
-         ORDER BY name",
-    )?;
-
-    let project_iter = stmt.query_map([], |row| {
-        Ok(Project {
-            id: row.get(0)?,
-            profile_id: row.get(1)?,
-            name: row.get(2)?,
-            description: row.get(3)?,
-        })
-    })?;
+    let db = Database::new(conn);
+    let projects = db.get_all_projects()?;
 
     println!(
         "{:<10} {:<30} {:<20} {:<40}",
@@ -25,8 +13,7 @@ pub fn list_projects(conn: &Connection) -> Result<()> {
     );
     println!("{:-<100}", "");
 
-    for project in project_iter {
-        let project = project?;
+    for project in projects {
         println!(
             "{:<10} {:<30} {:<20} {:<40}",
             project.id,

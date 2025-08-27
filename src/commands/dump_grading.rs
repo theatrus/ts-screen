@@ -1,3 +1,4 @@
+use crate::db::Database;
 use crate::models::{AcquiredImage, GradingStatus};
 use crate::utils::{extract_filename, truncate_string};
 use anyhow::Result;
@@ -10,71 +11,30 @@ pub fn dump_grading_results(
     target_filter: Option<String>,
     format: &str,
 ) -> Result<()> {
-    let mut query = String::from(
-        "SELECT ai.Id, ai.projectId, ai.targetId, ai.acquireddate, ai.filtername, 
-                ai.gradingStatus, ai.metadata, ai.rejectreason, ai.profileId,
-                p.name as project_name, t.name as target_name
-         FROM acquiredimage ai
-         JOIN project p ON ai.projectId = p.Id
-         JOIN target t ON ai.targetId = t.Id
-         WHERE 1=1",
-    );
+    let db = Database::new(conn);
 
-    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-
-    if let Some(status) = &status_filter {
-        let status_value = match status.to_lowercase().as_str() {
-            "pending" => 0,
-            "accepted" => 1,
-            "rejected" => 2,
+    let status = if let Some(status) = &status_filter {
+        match status.to_lowercase().as_str() {
+            "pending" => Some(GradingStatus::Pending),
+            "accepted" => Some(GradingStatus::Accepted),
+            "rejected" => Some(GradingStatus::Rejected),
             _ => {
                 return Err(anyhow::anyhow!(
                     "Invalid status: {}. Use pending, accepted, or rejected",
                     status
                 ))
             }
-        };
-        query.push_str(" AND ai.gradingStatus = ?");
-        params.push(Box::new(status_value));
-    }
+        }
+    } else {
+        None
+    };
 
-    if let Some(project) = &project_filter {
-        query.push_str(" AND p.name LIKE ?");
-        params.push(Box::new(format!("%{}%", project)));
-    }
-
-    if let Some(target) = &target_filter {
-        query.push_str(" AND t.name LIKE ?");
-        params.push(Box::new(format!("%{}%", target)));
-    }
-
-    query.push_str(" ORDER BY ai.acquireddate DESC");
-
-    let mut stmt = conn.prepare(&query)?;
-
-    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-    let image_iter = stmt.query_map(param_refs.as_slice(), |row| {
-        Ok((
-            AcquiredImage {
-                id: row.get(0)?,
-                project_id: row.get(1)?,
-                target_id: row.get(2)?,
-                acquired_date: row.get(3)?,
-                filter_name: row.get(4)?,
-                grading_status: row.get(5)?,
-                metadata: row.get(6)?,
-                reject_reason: row.get(7)?,
-                profile_id: row.get(8)?,
-            },
-            row.get::<_, String>(9)?,  // project_name
-            row.get::<_, String>(10)?, // target_name
-        ))
-    })?;
-
-    let mut results = Vec::new();
-    for image in image_iter {
-        results.push(image?);
-    }
+    let results = db.query_images(
+        status,
+        project_filter.as_deref(),
+        target_filter.as_deref(),
+        None,
+    )?;
 
     match format {
         "json" => output_json(&results)?,
