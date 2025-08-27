@@ -78,6 +78,13 @@ Testing focused on:
 
 ### Recent Updates (2025-08-27)
 
+#### Code Refactoring
+- Broke up monolithic main.rs (~1100 lines) into modular structure
+- Created separate modules for CLI, models, utils, and commands
+- Each command now has its own module in commands/ directory
+- Extracted shared statistical options into reusable structure
+- See REFACTORING.md for detailed changes
+
 #### Statistical Grading Enhancement
 - Refactored from filter-based to target-and-filter-based analysis
 - Added cloud detection algorithm with sequence analysis
