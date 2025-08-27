@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use bumpalo::Bump;
 use fitrs::{Fits, FitsData, FitsDataArray};
 use std::path::Path;
+use std::collections::VecDeque;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ImageStatistics {
@@ -24,6 +25,20 @@ pub struct StarDetection {
     pub brightness: f64,
     pub hfr: f64,
     pub fwhm: f64,
+}
+
+#[derive(Debug, Clone)]
+struct Blob {
+    pub bounds: BoundingBox,
+    pub pixels: Vec<(usize, usize)>,
+}
+
+#[derive(Debug, Clone)]
+struct BoundingBox {
+    pub x: usize,
+    pub y: usize,
+    pub width: usize,
+    pub height: usize,
 }
 
 /// FITS image data structure
@@ -216,237 +231,526 @@ impl FitsImage {
         }
     }
 
-    /// Detect stars using N.I.N.A.'s exact algorithm (optimized)
-    pub fn detect_stars(&self) -> Vec<StarDetection> {
-        // Create arena for temporary allocations
-        let arena = Bump::new();
-        let mut stars = Vec::new();
-
-        // N.I.N.A. uses minimum and maximum star sizes based on image resolution
-        let resize_factor = 1.0_f64; // For full resolution images
-        let min_star_size = (5.0_f64 * resize_factor).floor() as usize;
-        let max_star_size = (150.0_f64 * resize_factor).ceil() as usize;
-
-        // First pass: find bright pixels that could be star centers (optimization)
-        let global_background = self.estimate_background_arena(&arena);
-        let global_noise = self.estimate_noise_arena(&arena);
-        let candidate_threshold = (global_background + 2.0 * global_noise) as u16;
+    /// Convert 16-bit image to 8-bit for processing
+    fn convert_to_8bit(&self) -> Vec<u8> {
+        // N.I.N.A. likely uses a simpler bit shift conversion
+        // For 16-bit to 8-bit: divide by 256 (shift right by 8)
+        self.data.iter()
+            .map(|&val| (val >> 8) as u8)
+            .collect()
+    }
+    
+    /// Resize image for detection (nearest neighbor interpolation)
+    fn resize_image(data: &[u8], width: usize, height: usize, new_width: usize, new_height: usize) -> Vec<u8> {
+        let mut resized = vec![0u8; new_width * new_height];
+        let x_ratio = width as f64 / new_width as f64;
+        let y_ratio = height as f64 / new_height as f64;
         
-        let mut candidates = bumpalo::vec![in &arena];
+        for new_y in 0..new_height {
+            for new_x in 0..new_width {
+                let src_x = (new_x as f64 * x_ratio) as usize;
+                let src_y = (new_y as f64 * y_ratio) as usize;
+                resized[new_y * new_width + new_x] = data[src_y * width + src_x];
+            }
+        }
         
-        // Find local maxima above threshold (efficient first pass)
-        for y in (min_star_size..(self.height - min_star_size)).step_by(4) {
-            for x in (min_star_size..(self.width - min_star_size)).step_by(4) {
-                let center_value = self.data[y * self.width + x];
+        resized
+    }
+    
+    /// Apply Gaussian blur for noise reduction
+    fn gaussian_blur_3x3(data: &[u8], width: usize, height: usize) -> Vec<u8> {
+        let mut blurred = vec![0u8; data.len()];
+        let kernel = [
+            [1, 2, 1],
+            [2, 4, 2],
+            [1, 2, 1],
+        ];
+        let kernel_sum = 16;
+        
+        for y in 1..(height - 1) {
+            for x in 1..(width - 1) {
+                let mut sum = 0u32;
+                for ky in 0..3 {
+                    for kx in 0..3 {
+                        let py = y + ky - 1;
+                        let px = x + kx - 1;
+                        sum += data[py * width + px] as u32 * kernel[ky][kx];
+                    }
+                }
+                blurred[y * width + x] = (sum / kernel_sum) as u8;
+            }
+        }
+        
+        // Copy edges
+        for x in 0..width {
+            blurred[x] = data[x];
+            blurred[(height - 1) * width + x] = data[(height - 1) * width + x];
+        }
+        for y in 0..height {
+            blurred[y * width] = data[y * width];
+            blurred[y * width + width - 1] = data[y * width + width - 1];
+        }
+        
+        blurred
+    }
+    
+    /// Apply Canny edge detection (simplified version)
+    fn canny_edge_detection(data: &[u8], width: usize, height: usize, low_threshold: u8, high_threshold: u8) -> Vec<u8> {
+        // Apply Gaussian blur first
+        let blurred = Self::gaussian_blur_3x3(data, width, height);
+        
+        // Calculate gradients using Sobel operators
+        let mut gradients = vec![0u16; data.len()];
+        let mut edges = vec![0u8; data.len()];
+        
+        for y in 1..(height - 1) {
+            for x in 1..(width - 1) {
+                let idx = y * width + x;
                 
-                if center_value > candidate_threshold {
-                    // Quick local maximum check
-                    let mut is_local_max = true;
+                // Sobel X
+                let gx = (blurred[(y - 1) * width + x + 1] as i16 + 2 * blurred[y * width + x + 1] as i16 + blurred[(y + 1) * width + x + 1] as i16)
+                       - (blurred[(y - 1) * width + x - 1] as i16 + 2 * blurred[y * width + x - 1] as i16 + blurred[(y + 1) * width + x - 1] as i16);
+                
+                // Sobel Y
+                let gy = (blurred[(y + 1) * width + x - 1] as i16 + 2 * blurred[(y + 1) * width + x] as i16 + blurred[(y + 1) * width + x + 1] as i16)
+                       - (blurred[(y - 1) * width + x - 1] as i16 + 2 * blurred[(y - 1) * width + x] as i16 + blurred[(y - 1) * width + x + 1] as i16);
+                
+                gradients[idx] = ((gx * gx + gy * gy) as f64).sqrt() as u16;
+            }
+        }
+        
+        // Apply thresholding
+        for y in 1..(height - 1) {
+            for x in 1..(width - 1) {
+                let idx = y * width + x;
+                if gradients[idx] > high_threshold as u16 {
+                    edges[idx] = 255;
+                } else if gradients[idx] > low_threshold as u16 {
+                    // Check if connected to strong edge
+                    let mut has_strong_neighbor = false;
                     for dy in -1..=1 {
                         for dx in -1..=1 {
                             if dx == 0 && dy == 0 { continue; }
-                            let check_y = (y as i32 + dy) as usize;
-                            let check_x = (x as i32 + dx) as usize;
-                            if check_y < self.height && check_x < self.width {
-                                if self.data[check_y * self.width + check_x] >= center_value {
-                                    is_local_max = false;
-                                    break;
-                                }
+                            let ny = (y as i32 + dy) as usize;
+                            let nx = (x as i32 + dx) as usize;
+                            if gradients[ny * width + nx] > high_threshold as u16 {
+                                has_strong_neighbor = true;
+                                break;
                             }
                         }
-                        if !is_local_max { break; }
+                        if has_strong_neighbor { break; }
                     }
-                    
-                    if is_local_max {
-                        candidates.push((x, y));
+                    if has_strong_neighbor {
+                        edges[idx] = 255;
                     }
                 }
             }
         }
         
-        // Second pass: apply N.I.N.A.'s exact criteria to candidates
-        for (x, y) in candidates.iter() {
-            if let Some(star) = self.analyze_potential_star_nina(&arena, *x, *y, min_star_size, max_star_size) {
-                // Check if this star is too close to existing stars
-                let too_close = stars.iter().any(|existing_star: &StarDetection| {
-                    let dx = existing_star.x - star.x;
-                    let dy = existing_star.y - star.y;
-                    (dx * dx + dy * dy).sqrt() < min_star_size as f64
-                });
-
-                if !too_close {
-                    stars.push(star);
+        edges
+    }
+    
+    /// Apply binary dilation to connect nearby edges
+    fn binary_dilation_3x3(data: &[u8], width: usize, height: usize) -> Vec<u8> {
+        let mut dilated = vec![0u8; data.len()];
+        
+        for y in 1..(height - 1) {
+            for x in 1..(width - 1) {
+                let mut has_edge = false;
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        let ny = (y as i32 + dy) as usize;
+                        let nx = (x as i32 + dx) as usize;
+                        if data[ny * width + nx] > 0 {
+                            has_edge = true;
+                            break;
+                        }
+                    }
+                    if has_edge { break; }
+                }
+                if has_edge {
+                    dilated[y * width + x] = 255;
                 }
             }
         }
-
-        // Sort by brightness (descending) like N.I.N.A.
-        stars.sort_by(|a, b| {
-            b.brightness
-                .partial_cmp(&a.brightness)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        stars
+        
+        dilated
+    }
+    
+    /// Find connected components (blobs) using flood fill
+    fn find_blobs(binary_image: &[u8], width: usize, height: usize) -> Vec<Blob> {
+        let mut visited = vec![false; binary_image.len()];
+        let mut blobs = Vec::new();
+        
+        for y in 0..height {
+            for x in 0..width {
+                let idx = y * width + x;
+                if binary_image[idx] > 0 && !visited[idx] {
+                    // Start flood fill
+                    let mut blob_pixels = Vec::new();
+                    let mut queue = VecDeque::new();
+                    queue.push_back((x, y));
+                    visited[idx] = true;
+                    
+                    let mut min_x = x;
+                    let mut max_x = x;
+                    let mut min_y = y;
+                    let mut max_y = y;
+                    
+                    while let Some((cx, cy)) = queue.pop_front() {
+                        blob_pixels.push((cx, cy));
+                        min_x = min_x.min(cx);
+                        max_x = max_x.max(cx);
+                        min_y = min_y.min(cy);
+                        max_y = max_y.max(cy);
+                        
+                        // Check 8-connected neighbors
+                        for dy in -1..=1 {
+                            for dx in -1..=1 {
+                                if dx == 0 && dy == 0 { continue; }
+                                let nx = (cx as i32 + dx) as usize;
+                                let ny = (cy as i32 + dy) as usize;
+                                
+                                if nx < width && ny < height {
+                                    let nidx = ny * width + nx;
+                                    if binary_image[nidx] > 0 && !visited[nidx] {
+                                        visited[nidx] = true;
+                                        queue.push_back((nx, ny));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    blobs.push(Blob {
+                        bounds: BoundingBox {
+                            x: min_x,
+                            y: min_y,
+                            width: max_x - min_x + 1,
+                            height: max_y - min_y + 1,
+                        },
+                        pixels: blob_pixels,
+                    });
+                }
+            }
+        }
+        
+        blobs
+    }
+    
+    /// Detect stars using N.I.N.A.'s exact algorithm  
+    pub fn detect_stars(&self) -> Vec<StarDetection> {
+        use crate::nina_star_detection::{detect_stars, StarDetectionParams};
+        
+        // Use N.I.N.A. star detection with default parameters
+        let params = StarDetectionParams::default();
+        let result = detect_stars(&self.data, self.width, self.height, &params);
+        
+        // Convert N.I.N.A. results to our StarDetection format
+        result.star_list.into_iter().map(|star| {
+            StarDetection {
+                x: star.position.0,
+                y: star.position.1,
+                brightness: star.average_brightness,
+                hfr: star.hfr,
+                fwhm: star.hfr * 2.0 * 1.177, // Standard conversion
+            }
+        }).collect()
+    }
+    
+    /// Analyze a star blob using N.I.N.A.'s exact algorithm on original 16-bit data
+    fn analyze_star_nina_blob(
+        &self,
+        center_x: usize,
+        center_y: usize,
+        radius: usize,
+        _blob: &Blob,
+        inverse_resize_factor: f64,
+    ) -> Option<StarDetection> {
+        // The radius is already in original coordinates, so use it directly
+        let rect_width = radius * 2;
+        let rect_height = rect_width;
+        
+        // Build rectangles for analysis
+        let rect_left = center_x.saturating_sub(rect_width / 2);
+        let rect_top = center_y.saturating_sub(rect_height / 2);
+        let rect_right = (rect_left + rect_width).min(self.width - 1);
+        let rect_bottom = (rect_top + rect_height).min(self.height - 1);
+        
+        // Large rectangle for background estimation (3x the star size)
+        let large_rect_left = rect_left.saturating_sub(rect_width);
+        let large_rect_top = rect_top.saturating_sub(rect_height);
+        let large_rect_right = (rect_right + rect_width).min(self.width - 1);
+        let large_rect_bottom = (rect_bottom + rect_height).min(self.height - 1);
+        
+        // Calculate background statistics
+        let mut large_rect_sum = 0.0;
+        let mut large_rect_sum_squares = 0.0;
+        let mut large_rect_pixel_count = 0;
+        
+        for y in large_rect_top..=large_rect_bottom {
+            for x in large_rect_left..=large_rect_right {
+                // Skip pixels inside the star rectangle
+                if x >= rect_left && x <= rect_right && y >= rect_top && y <= rect_bottom {
+                    continue;
+                }
+                let pixel_val = self.data[y * self.width + x] as f64;
+                large_rect_sum += pixel_val;
+                large_rect_sum_squares += pixel_val * pixel_val;
+                large_rect_pixel_count += 1;
+            }
+        }
+        
+        if large_rect_pixel_count == 0 {
+            return None;
+        }
+        
+        let large_rect_mean = large_rect_sum / large_rect_pixel_count as f64;
+        let large_rect_stdev = ((large_rect_sum_squares - large_rect_pixel_count as f64 * large_rect_mean * large_rect_mean) / large_rect_pixel_count as f64).sqrt();
+        
+        // Calculate star statistics
+        let mut star_pixel_sum = 0.0;
+        let mut star_pixel_count = 0;
+        let mut inner_star_bright_pixels = 0;
+        
+        // Minimum bright pixels based on resized dimensions
+        let resized_width = (self.width as f64 * (1.0 / inverse_resize_factor)) as usize;
+        let resized_height = (self.height as f64 * (1.0 / inverse_resize_factor)) as usize;
+        let minimum_bright_pixels = (resized_width.max(resized_height) as f64 / 1000.0).ceil() as usize;
+        let bright_pixel_threshold = large_rect_mean + 1.5 * large_rect_stdev;
+        
+        // Check pixels within the star's circular region
+        for y in rect_top..=rect_bottom {
+            for x in rect_left..=rect_right {
+                let dx = x as i32 - center_x as i32;
+                let dy = y as i32 - center_y as i32;
+                let dist_sq = (dx * dx + dy * dy) as f64;
+                
+                if dist_sq <= (radius * radius) as f64 {
+                    let pixel_val = self.data[y * self.width + x] as f64;
+                    star_pixel_sum += pixel_val;
+                    star_pixel_count += 1;
+                    
+                    if pixel_val > bright_pixel_threshold {
+                        inner_star_bright_pixels += 1;
+                    }
+                }
+            }
+        }
+        
+        if star_pixel_count == 0 {
+            return None;
+        }
+        
+        let star_mean_brightness = star_pixel_sum / star_pixel_count as f64;
+        
+        // N.I.N.A.'s exact detection criteria
+        let brightness_threshold = large_rect_mean + (0.1 * large_rect_mean).min(large_rect_stdev);
+        
+        if star_mean_brightness < brightness_threshold {
+            return None;
+        }
+        
+        if inner_star_bright_pixels < minimum_bright_pixels {
+            return None;
+        }
+        
+        // Calculate HFR using N.I.N.A.'s exact method
+        self.calculate_nina_hfr_exact(center_x, center_y, rect_left, rect_top, rect_right, rect_bottom, large_rect_mean, radius)
     }
     
     /// Analyze a potential star location using N.I.N.A.'s exact criteria
     fn analyze_potential_star_nina(
         &self,
-        arena: &Bump,
+        _arena: &Bump,
         center_x: usize,
         center_y: usize,
         min_size: usize,
-        max_size: usize,
+        _max_size: usize,
+        resize_factor: f64,
     ) -> Option<StarDetection> {
-        // N.I.N.A. examines a large rectangle around the potential star center
-        let large_rect_size = max_size;
-        let half_rect = large_rect_size / 2;
+        // First check if we can fit a proper analysis rectangle
+        let rect_radius = min_size.max(5); // At least 5 pixels for meaningful analysis
         
-        if center_x < half_rect || center_y < half_rect || 
-           center_x + half_rect >= self.width || center_y + half_rect >= self.height {
-            return None;
-        }
+        // Star bounding box
+        let star_left = center_x.saturating_sub(rect_radius);
+        let star_top = center_y.saturating_sub(rect_radius);
+        let star_right = (center_x + rect_radius).min(self.width - 1);
+        let star_bottom = (center_y + rect_radius).min(self.height - 1);
+        let star_width = star_right - star_left + 1;
+        let star_height = star_bottom - star_top + 1;
         
-        // Calculate mean and standard deviation of large rectangle area
-        let mut large_rect_pixels = bumpalo::vec![in arena];
-        for dy in 0..large_rect_size {
-            for dx in 0..large_rect_size {
-                let px = center_x - half_rect + dx;
-                let py = center_y - half_rect + dy;
-                large_rect_pixels.push(self.data[py * self.width + px] as f64);
-            }
-        }
+        // N.I.N.A. builds a large rectangle (3x the star size) for background estimation
+        let large_rect_left = star_left.saturating_sub(star_width);
+        let large_rect_top = star_top.saturating_sub(star_height);
+        let large_rect_right = (star_right + star_width).min(self.width - 1);
+        let large_rect_bottom = (star_bottom + star_height).min(self.height - 1);
         
-        let large_rect_sum: f64 = large_rect_pixels.iter().sum();
-        let large_rect_mean = large_rect_sum / large_rect_pixels.len() as f64;
+        // Calculate statistics for the large rect (excluding the star rect) - this is the background
+        let mut large_rect_sum = 0.0;
+        let mut large_rect_sum_squares = 0.0;
+        let mut large_rect_pixel_count = 0;
         
-        let large_rect_variance: f64 = large_rect_pixels
-            .iter()
-            .map(|&val| (val - large_rect_mean).powi(2))
-            .sum::<f64>() / large_rect_pixels.len() as f64;
-        let large_rect_stdev = large_rect_variance.sqrt();
-        
-        // N.I.N.A.'s star detection criteria: star must be brighter than background
-        let brightness_threshold = large_rect_mean + (0.1 * large_rect_mean).min(large_rect_stdev);
-        
-        // Examine inner star area
-        let inner_radius = min_size;
-        let mut inner_star_pixels = bumpalo::vec![in arena];
-        let mut star_brightness_sum = 0.0;
-        let mut pixel_count = 0;
-        
-        for dy in -(inner_radius as i32)..=(inner_radius as i32) {
-            for dx in -(inner_radius as i32)..=(inner_radius as i32) {
-                let px = center_x as i32 + dx;
-                let py = center_y as i32 + dy;
-                
-                if px < 0 || py < 0 || px >= self.width as i32 || py >= self.height as i32 {
+        for y in large_rect_top..=large_rect_bottom {
+            for x in large_rect_left..=large_rect_right {
+                // Skip pixels inside the star rectangle
+                if x >= star_left && x <= star_right && y >= star_top && y <= star_bottom {
                     continue;
                 }
-                
-                let distance_sq = (dx * dx + dy * dy) as f64;
-                if distance_sq <= (inner_radius * inner_radius) as f64 {
-                    let pixel_val = self.data[py as usize * self.width + px as usize] as f64;
-                    inner_star_pixels.push(pixel_val);
-                    star_brightness_sum += pixel_val;
-                    pixel_count += 1;
-                }
+                let pixel_val = self.data[y * self.width + x] as f64;
+                large_rect_sum += pixel_val;
+                large_rect_sum_squares += pixel_val * pixel_val;
+                large_rect_pixel_count += 1;
             }
         }
         
-        if pixel_count == 0 {
+        if large_rect_pixel_count == 0 {
             return None;
         }
         
-        let star_mean_brightness = star_brightness_sum / pixel_count as f64;
+        let large_rect_mean = large_rect_sum / large_rect_pixel_count as f64;
+        let large_rect_stdev = ((large_rect_sum_squares - large_rect_pixel_count as f64 * large_rect_mean * large_rect_mean) / large_rect_pixel_count as f64).sqrt();
         
-        // N.I.N.A.'s brightness check
-        if star_mean_brightness < brightness_threshold {
-            return None;
-        }
+        // Calculate star statistics
+        let mut star_pixel_sum = 0.0;
+        let mut star_pixel_count = 0;
+        let mut max_pixel_value = 0.0_f64;
+        let mut inner_star_bright_pixels = 0;
         
-        // N.I.N.A.'s minimum bright pixels check
+        // N.I.N.A.'s exact criteria - uses the conceptually resized dimensions
+        let resized_width = (self.width as f64 * resize_factor) as usize;
+        let resized_height = (self.height as f64 * resize_factor) as usize; 
+        let minimum_bright_pixels = (resized_width.max(resized_height) as f64 / 1000.0).ceil() as usize;
         let bright_pixel_threshold = large_rect_mean + 1.5 * large_rect_stdev;
-        let minimum_bright_pixels = 3; // N.I.N.A. uses a small minimum
-        let bright_pixel_count = inner_star_pixels
-            .iter()
-            .filter(|&&val| val > bright_pixel_threshold)
-            .count();
-            
-        if bright_pixel_count < minimum_bright_pixels {
-            return None;
-        }
         
-        // Calculate HFR using N.I.N.A.'s exact method
-        self.calculate_nina_hfr(arena, center_x, center_y, large_rect_mean, inner_radius)
-    }
-    
-    /// Calculate HFR using N.I.N.A.'s exact algorithm
-    fn calculate_nina_hfr(
-        &self,
-        arena: &Bump,
-        center_x: usize,
-        center_y: usize, 
-        surrounding_mean: f64,
-        base_radius: usize,
-    ) -> Option<StarDetection> {
-        let outer_radius = (base_radius as f64 * 1.2) as usize;
-        let mut sum = 0.0;
-        let mut sum_dist = 0.0;
-        let mut total_flux = 0.0;
-        let mut weighted_x = 0.0;
-        let mut weighted_y = 0.0;
-        
-        for dy in -(outer_radius as i32)..=(outer_radius as i32) {
-            for dx in -(outer_radius as i32)..=(outer_radius as i32) {
-                let px = center_x as i32 + dx;
-                let py = center_y as i32 + dy;
+        for y in star_top..=star_bottom {
+            for x in star_left..=star_right {
+                // Check if inside circular star region  
+                let dx = x as i32 - center_x as i32;
+                let dy = y as i32 - center_y as i32;
+                let dist_sq = (dx * dx + dy * dy) as f64;
                 
-                if px < 0 || py < 0 || px >= self.width as i32 || py >= self.height as i32 {
-                    continue;
-                }
-                
-                let distance = ((dx * dx + dy * dy) as f64).sqrt();
-                if distance <= outer_radius as f64 {
-                    let pixel_val = self.data[py as usize * self.width + px as usize] as f64;
-                    // N.I.N.A. subtracts surrounding mean and rounds
-                    let background_subtracted = (pixel_val - surrounding_mean).round().max(0.0);
+                if dist_sq <= (rect_radius * rect_radius) as f64 {
+                    let pixel_val = self.data[y * self.width + x] as f64;
+                    star_pixel_sum += pixel_val;
+                    star_pixel_count += 1;
+                    max_pixel_value = max_pixel_value.max(pixel_val);
                     
-                    if background_subtracted > 0.0 {
-                        sum += background_subtracted;
-                        sum_dist += background_subtracted * distance;
-                        total_flux += background_subtracted;
-                        weighted_x += px as f64 * background_subtracted;
-                        weighted_y += py as f64 * background_subtracted;
+                    if pixel_val > bright_pixel_threshold {
+                        inner_star_bright_pixels += 1;
                     }
                 }
             }
         }
         
-        if sum <= 0.0 {
+        if star_pixel_count == 0 {
             return None;
+        }
+        
+        let star_mean_brightness = star_pixel_sum / star_pixel_count as f64;
+        
+        // N.I.N.A.'s exact detection criteria
+        let brightness_threshold = large_rect_mean + (0.1 * large_rect_mean).min(large_rect_stdev);
+        
+        if star_mean_brightness < brightness_threshold {
+            return None;
+        }
+        
+        if inner_star_bright_pixels < minimum_bright_pixels {
+            return None;
+        }
+        
+        // Star passed all tests, calculate HFR using N.I.N.A.'s exact method
+        self.calculate_nina_hfr_exact(center_x, center_y, star_left, star_top, star_right, star_bottom, large_rect_mean, rect_radius)
+    }
+    
+    /// Calculate HFR using N.I.N.A.'s exact algorithm
+    fn calculate_nina_hfr_exact(
+        &self,
+        center_x: usize,
+        center_y: usize,
+        rect_left: usize,
+        rect_top: usize, 
+        rect_right: usize,
+        rect_bottom: usize,
+        surrounding_mean: f64,
+        radius: usize,
+    ) -> Option<StarDetection> {
+        // N.I.N.A. uses outerRadius = radius * 1.2
+        let outer_radius = radius as f64 * 1.2;
+        let mut sum = 0.0;
+        let mut sum_dist = 0.0;
+        let mut sum_val_x = 0.0;
+        let mut sum_val_y = 0.0;
+        let mut all_sum = 0.0;
+        let mut pixel_count = 0;
+        
+        // Process all pixels in the star rectangle
+        for y in rect_top..=rect_bottom {
+            for x in rect_left..=rect_right {
+                let dx = x as f64 - center_x as f64;
+                let dy = y as f64 - center_y as f64;
+                let distance = (dx * dx + dy * dy).sqrt();
+                
+                let pixel_val = self.data[y * self.width + x] as f64;
+                
+                // N.I.N.A.'s exact background subtraction: Math.Round(value - SurroundingMean)
+                let mut value = (pixel_val - surrounding_mean).round();
+                if value < 0.0 {
+                    value = 0.0;
+                }
+                
+                all_sum += value;
+                pixel_count += 1;
+                
+                // Only include pixels within outerRadius in HFR calculation
+                if distance <= outer_radius {
+                    sum += value;
+                    sum_dist += value * distance;
+                    sum_val_x += (x - rect_left) as f64 * value;
+                    sum_val_y += (y - rect_top) as f64 * value;
+                }
+            }
         }
         
         // N.I.N.A.'s exact HFR calculation
         let hfr = if sum > 0.0 {
             sum_dist / sum
         } else {
-            // N.I.N.A.'s fallback value
-            (2.0_f64).sqrt() * outer_radius as f64
+            (2.0_f64).sqrt() * outer_radius
         };
         
-        let centroid_x = weighted_x / total_flux;
-        let centroid_y = weighted_y / total_flux;
+        // Calculate average brightness
+        let average = if pixel_count > 0 {
+            all_sum / pixel_count as f64
+        } else {
+            0.0
+        };
+        
+        // Update centroid if we have signal
+        let (final_x, final_y) = if sum > 0.0 {
+            let centroid_x = sum_val_x / sum + rect_left as f64;
+            let centroid_y = sum_val_y / sum + rect_top as f64;
+            (centroid_x, centroid_y)
+        } else {
+            (center_x as f64, center_y as f64)
+        };
+        
         let fwhm = hfr * 2.0 * 1.177; // Standard conversion
         
-        Some(StarDetection {
-            x: centroid_x,
-            y: centroid_y,
-            brightness: total_flux,
-            hfr,
-            fwhm,
-        })
+        // Check if centroid is within bounds (not touching edges)
+        if final_x > (rect_left + 1) as f64 && final_y > (rect_top + 1) as f64 
+            && final_x < (rect_right - 1) as f64 && final_y < (rect_bottom - 1) as f64 {
+            Some(StarDetection {
+                x: final_x,
+                y: final_y,
+                brightness: average, // N.I.N.A. uses average, not total flux
+                hfr,
+                fwhm,
+            })
+        } else {
+            None // Reject stars whose centroids touch the edges
+        }
     }
 
     /// Estimate background level using median of border pixels (heap-allocated version)

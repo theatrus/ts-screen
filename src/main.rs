@@ -10,6 +10,8 @@ mod grading;
 mod image_analysis;
 mod models;
 mod utils;
+mod accord_imaging;
+mod nina_star_detection;
 
 use cli::{Cli, Commands};
 use commands::{
