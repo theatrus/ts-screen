@@ -2,6 +2,11 @@
 
 A Rust utility for analyzing N.I.N.A. (Nighttime Imaging 'N' Astronomy) Target Scheduler plugin databases and managing rejected astronomical image files.
 
+## Documentation
+
+- [Statistical Grading Guide](STATISTICAL_GRADING.md) - Detailed documentation on statistical analysis features
+- [Development Notes](CLAUDE.md) - Technical implementation details for developers
+
 ## Overview
 
 TS-Screen (N.I.N.A Target Scheduler Plugin File Screener) provides tools to:
@@ -103,6 +108,19 @@ The utility automatically detects and handles two common directory structures:
 
 The utility also handles files already in `LIGHT/rejected/` subdirectories and moves them to the appropriate `LIGHT_REJECT/` directory.
 
+### Statistical Grading
+
+Beyond the database grading status, ts-screen can perform statistical analysis to identify additional outliers:
+
+- **HFR Analysis**: Detects images with Half Flux Radius (focus quality) significantly different from the target's distribution
+- **Star Count Analysis**: Identifies images with abnormal star detection counts per target
+- **Distribution Analysis**: Uses Median Absolute Deviation (MAD) for skewed distributions where median differs significantly from mean
+- **Cloud Detection**: Monitors sequences for sudden rises in HFR or drops in star count that indicate clouds, then waits for stable baseline before accepting images again
+
+Statistical grading analyzes all images per target and filter combination to establish baselines, then identifies outliers that may have been missed by the initial grading process. The analysis is target-specific to account for different imaging conditions across the sky.
+
+For detailed information about statistical grading features, algorithms, and best practices, see [STATISTICAL_GRADING.md](STATISTICAL_GRADING.md).
+
 ## Database Schema
 
 The utility expects a SQLite database with the following key tables:
@@ -151,6 +169,16 @@ Options:
 - `--dry-run`: Perform a dry run (show what would be moved without actually moving)
 - `-p, --project <PROJECT>`: Filter by project name
 - `-t, --target <TARGET>`: Filter by target name
+- `--enable-statistical`: Enable statistical analysis for additional rejections
+- `--stat-hfr`: Enable HFR outlier detection
+- `--hfr-stddev <STDDEV>`: Standard deviations for HFR outlier detection (default: 2.0)
+- `--stat-stars`: Enable star count outlier detection  
+- `--star-stddev <STDDEV>`: Standard deviations for star count outlier detection (default: 2.0)
+- `--stat-distribution`: Enable distribution analysis (median/mean shift detection)
+- `--median-shift-threshold <THRESHOLD>`: Percentage threshold for median shift from mean (default: 0.1)
+- `--stat-clouds`: Enable cloud detection (sudden rises in HFR or drops in star count)
+- `--cloud-threshold <THRESHOLD>`: Percentage threshold for cloud detection (default: 0.2 = 20% change)
+- `--cloud-baseline-count <COUNT>`: Number of images needed to establish baseline after cloud event (default: 5)
 
 ## Safety Features
 
@@ -173,6 +201,15 @@ ts-screen filter-rejected mydb.sqlite ./images --target "LDN 1228"
 
 # Get JSON output for integration with other tools
 ts-screen dump-grading --status accepted --format json | jq '.[] | select(.filter_name == "HA")'
+
+# Use statistical grading to find outliers beyond database rejections
+ts-screen filter-rejected mydb.sqlite ./images --dry-run --enable-statistical --stat-hfr --stat-stars
+
+# Fine-tune statistical thresholds
+ts-screen filter-rejected mydb.sqlite ./images --dry-run --enable-statistical --stat-hfr --hfr-stddev 1.5 --stat-distribution --median-shift-threshold 0.15
+
+# Enable cloud detection with custom thresholds
+ts-screen filter-rejected mydb.sqlite ./images --dry-run --enable-statistical --stat-clouds --cloud-threshold 0.15 --cloud-baseline-count 3
 ```
 
 ## License

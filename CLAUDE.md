@@ -76,6 +76,31 @@ Testing focused on:
 - Minimal file system checks (only when necessary)
 - Efficient path parsing without regex where possible
 
+### Recent Updates (2025-08-27)
+
+#### Statistical Grading Enhancement
+- Refactored from filter-based to target-and-filter-based analysis
+- Added cloud detection algorithm with sequence analysis
+- Implemented rolling baseline establishment after cloud events
+
+#### Key Implementation Details
+
+1. **Data Flow**:
+   - Images grouped by `(target_id, filter_name)` tuples
+   - Sorted chronologically within each group for sequence analysis
+   - Per-target statistics calculated independently
+
+2. **Cloud Detection Algorithm**:
+   - Rolling median baseline (default: 5 images)
+   - Triggers on 20% change (configurable)
+   - Requires new baseline after cloud event
+   - Dual detection: HFR increase OR star count decrease
+
+3. **Statistical Methods**:
+   - Standard deviation for normal distributions
+   - MAD (Median Absolute Deviation) for skewed distributions
+   - Automatic detection of distribution type based on median/mean difference
+
 ### Future Improvements
 
 1. **Parallel Processing**: File moves could be parallelized for large batches
@@ -83,12 +108,44 @@ Testing focused on:
 3. **Undo Capability**: Track moves in a local database for reversal
 4. **Configuration File**: Support for .tsscreenrc configuration
 5. **Extended Filtering**: More complex queries (date ranges, multiple statuses)
+6. **Machine Learning**: Train models on accepted/rejected images for better detection
+7. **Real-time Monitoring**: Watch mode for live sessions
+
+### Statistical Grading Module (grading.rs)
+
+The statistical grading module provides advanced outlier detection:
+
+#### Key Structures
+- `StatisticalGradingConfig`: Configuration for all analysis features
+- `ImageStatistics`: Per-image metrics (HFR, star count, target info)
+- `FilterStatistics`: Aggregate statistics per target/filter group
+- `StatisticalRejection`: Rejection details with reason and explanation
+
+#### Algorithm Flow
+1. Parse metadata to extract HFR and star counts
+2. Group images by (target_id, filter_name)
+3. Sort chronologically for sequence analysis
+4. Calculate distribution statistics
+5. Apply multiple detection methods:
+   - Z-score for normal distributions
+   - MAD for skewed distributions
+   - Sequence analysis for cloud detection
+
+#### Edge Cases Handled
+- Images with missing HFR/star count data
+- Groups with insufficient data (< 3 images)
+- Extreme outliers (0 HFR values)
+- Baseline reset after cloud events
 
 ### Development Commands
 
 ```bash
 # Run with verbose logging
 RUST_LOG=debug cargo run -- filter-rejected db.sqlite files --dry-run
+
+# Test statistical grading
+cargo run -- filter-rejected schedulerdb.sqlite files --dry-run \
+  --enable-statistical --stat-hfr --stat-stars --stat-clouds
 
 # Run tests
 cargo test

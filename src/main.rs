@@ -5,6 +5,8 @@ use anyhow::Context;
 use std::path::PathBuf;
 use std::fs;
 
+mod grading;
+
 #[derive(Debug, Serialize, Deserialize)]
 struct Project {
     id: i32,
@@ -115,6 +117,46 @@ enum Commands {
         /// Filter by target name
         #[arg(short, long)]
         target: Option<String>,
+        
+        /// Enable statistical analysis for additional rejections
+        #[arg(long)]
+        enable_statistical: bool,
+        
+        /// Enable HFR outlier detection
+        #[arg(long, requires = "enable_statistical")]
+        stat_hfr: bool,
+        
+        /// Standard deviations for HFR outlier detection
+        #[arg(long, default_value = "2.0", requires = "stat_hfr")]
+        hfr_stddev: f64,
+        
+        /// Enable star count outlier detection
+        #[arg(long, requires = "enable_statistical")]
+        stat_stars: bool,
+        
+        /// Standard deviations for star count outlier detection
+        #[arg(long, default_value = "2.0", requires = "stat_stars")]
+        star_stddev: f64,
+        
+        /// Enable distribution analysis (median/mean shift detection)
+        #[arg(long, requires = "enable_statistical")]
+        stat_distribution: bool,
+        
+        /// Percentage threshold for median shift from mean (0.0-1.0)
+        #[arg(long, default_value = "0.1", requires = "stat_distribution")]
+        median_shift_threshold: f64,
+        
+        /// Enable cloud detection (sudden rises in median HFR or drops in star count)
+        #[arg(long, requires = "enable_statistical")]
+        stat_clouds: bool,
+        
+        /// Percentage threshold for cloud detection (0.0-1.0, e.g. 0.2 = 20% change)
+        #[arg(long, default_value = "0.2", requires = "stat_clouds")]
+        cloud_threshold: f64,
+        
+        /// Number of images needed to establish baseline after cloud event
+        #[arg(long, default_value = "5", requires = "stat_clouds")]
+        cloud_baseline_count: usize,
     },
 }
 
@@ -137,10 +179,43 @@ fn main() -> anyhow::Result<()> {
                 .with_context(|| format!("Failed to open database: {}", cli.database))?;
             list_targets(&conn, &project)?;
         },
-        Commands::FilterRejected { database, base_dir, dry_run, project, target } => {
+        Commands::FilterRejected { 
+            database, 
+            base_dir, 
+            dry_run, 
+            project, 
+            target,
+            enable_statistical,
+            stat_hfr,
+            hfr_stddev,
+            stat_stars,
+            star_stddev,
+            stat_distribution,
+            median_shift_threshold,
+            stat_clouds,
+            cloud_threshold,
+            cloud_baseline_count,
+        } => {
             let conn = Connection::open(&database)
                 .with_context(|| format!("Failed to open database: {}", database))?;
-            filter_rejected_files(&conn, &base_dir, dry_run, project, target)?;
+            
+            let stat_config = if enable_statistical {
+                Some(grading::StatisticalGradingConfig {
+                    enable_hfr_analysis: stat_hfr,
+                    hfr_stddev_threshold: hfr_stddev,
+                    enable_star_count_analysis: stat_stars,
+                    star_count_stddev_threshold: star_stddev,
+                    enable_distribution_analysis: stat_distribution,
+                    median_shift_threshold: median_shift_threshold,
+                    enable_cloud_detection: stat_clouds,
+                    cloud_threshold: cloud_threshold,
+                    cloud_baseline_count: cloud_baseline_count,
+                })
+            } else {
+                None
+            };
+            
+            filter_rejected_files(&conn, &base_dir, dry_run, project, target, stat_config)?;
         },
     }
     
@@ -422,17 +497,26 @@ fn filter_rejected_files(
     dry_run: bool,
     project_filter: Option<String>,
     target_filter: Option<String>,
+    stat_config: Option<grading::StatisticalGradingConfig>,
 ) -> anyhow::Result<()> {
-    // Query for rejected files
+    // If statistical analysis is enabled, we need all images to analyze
+    let perform_statistical = stat_config.is_some();
+    
+    // Query for images - if statistical analysis enabled, get all; otherwise just rejected
     let mut query = String::from(
         "SELECT ai.Id, ai.projectId, ai.targetId, ai.acquireddate, ai.filtername, 
                 ai.gradingStatus, ai.metadata, ai.rejectreason, ai.profileId,
                 p.name as project_name, t.name as target_name
          FROM acquiredimage ai
          JOIN project p ON ai.projectId = p.Id
-         JOIN target t ON ai.targetId = t.Id
-         WHERE ai.gradingStatus = 2"  // 2 = Rejected
+         JOIN target t ON ai.targetId = t.Id"
     );
+    
+    if !perform_statistical {
+        query.push_str(" WHERE ai.gradingStatus = 2");  // 2 = Rejected
+    } else {
+        query.push_str(" WHERE 1=1");  // Get all images for statistical analysis
+    }
     
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     
@@ -472,15 +556,68 @@ fn filter_rejected_files(
         }
     )?;
     
+    // Collect all images first
+    let mut all_images = Vec::new();
+    for image_result in image_iter {
+        all_images.push(image_result?);
+    }
+    
+    // Perform statistical analysis if enabled
+    let mut statistical_rejections = std::collections::HashMap::new();
+    if let Some(config) = stat_config {
+        println!("Performing statistical analysis...");
+        
+        // Convert to format expected by grader
+        let mut image_stats = Vec::new();
+        for (image, _project_name, target_name) in &all_images {
+            match grading::parse_image_metadata(
+                image.id,
+                image.target_id,
+                target_name,
+                &image.metadata, 
+                &image.filter_name, 
+                image.grading_status
+            ) {
+                Ok(stats) => image_stats.push(stats),
+                Err(e) => println!("  Warning: Failed to parse metadata for image {}: {}", image.id, e),
+            }
+        }
+        
+        // Run statistical analysis
+        let grader = grading::StatisticalGrader::new(config);
+        match grader.analyze_images(image_stats) {
+            Ok(rejections) => {
+                println!("  Found {} statistical rejections", rejections.len());
+                for rejection in rejections {
+                    println!("    Image {}: {} - {}", rejection.image_id, rejection.reason, rejection.details);
+                    statistical_rejections.insert(rejection.image_id, rejection);
+                }
+            },
+            Err(e) => println!("  Warning: Statistical analysis failed: {}", e),
+        }
+        println!();
+    }
+    
     let mut moved_count = 0;
     let mut not_found_count = 0;
     let mut error_count = 0;
     
-    println!("{}Filtering rejected files from database...", if dry_run { "[DRY RUN] " } else { "" });
+    println!("{}Filtering files...", if dry_run { "[DRY RUN] " } else { "" });
     println!();
     
-    for image_result in image_iter {
-        let (image, _project_name, _target_name) = image_result?;
+    for (image, _project_name, _target_name) in all_images {
+        // Check if this image should be moved
+        let should_move = if perform_statistical {
+            // Move if rejected in database OR statistically rejected
+            image.grading_status == 2 || statistical_rejections.contains_key(&image.id)
+        } else {
+            // Move only if rejected in database
+            image.grading_status == 2
+        };
+        
+        if !should_move {
+            continue;
+        }
         
         // Extract the full file path from metadata
         let metadata: serde_json::Value = serde_json::from_str(&image.metadata)?;
@@ -616,11 +753,18 @@ fn filter_rejected_files(
         // Create destination directory if needed
         let dest_dir = dest_path.parent().unwrap();
         
+        // Determine the rejection reason
+        let rejection_reason = if let Some(stat_rejection) = statistical_rejections.get(&image.id) {
+            format!("{}: {}", stat_rejection.reason, stat_rejection.details)
+        } else {
+            image.reject_reason.as_deref().unwrap_or("No reason given").to_string()
+        };
+        
         if dry_run {
             println!("  WOULD MOVE: {} -> {}", 
                      actual_source_path.display(), 
                      dest_path.display());
-            println!("    Reason: {}", image.reject_reason.as_deref().unwrap_or("No reason given"));
+            println!("    Reason: {}", rejection_reason);
             moved_count += 1;
         } else {
             // Create destination directory
@@ -632,7 +776,7 @@ fn filter_rejected_files(
                             println!("  MOVED: {} -> {}", 
                                      actual_source_path.display(), 
                                      dest_path.display());
-                            println!("    Reason: {}", image.reject_reason.as_deref().unwrap_or("No reason given"));
+                            println!("    Reason: {}", rejection_reason);
                             moved_count += 1;
                         },
                         Err(e) => {
