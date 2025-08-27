@@ -266,15 +266,21 @@ fn prepare_for_structure_detection(
     params: &StarDetectionParams,
 ) {
     // Apply Canny edge detector
-    if params.noise_reduction == NoiseReduction::None || params.noise_reduction == NoiseReduction::Median {
-        // Still need to apply Gaussian blur, using normal Canny
-        let canny = CannyEdgeDetector::new(10, 80);
-        canny.apply_in_place(image, width, height);
-    } else {
-        // Gaussian blur already applied, using no-blur Canny
-        let canny = NoBlurCannyEdgeDetector::new(10, 80);
-        canny.apply_in_place(image, width, height);
+    // N.I.N.A. uses NoBlurCanny for High/Highest sensitivity, regular Canny for Normal
+    match params.sensitivity {
+        StarSensitivity::Normal => {
+            let canny = CannyEdgeDetector::new(10, 80);
+            canny.apply_in_place(image, width, height);
+        }
+        StarSensitivity::High | StarSensitivity::Highest => {
+            let canny = CannyEdgeDetector::new_no_blur(10, 80);
+            canny.apply_in_place(image, width, height);
+        }
     }
+    
+    // Debug: Check edge detection results
+    let edge_pixels = image.iter().filter(|&&p| p > 0).count();
+    eprintln!("Debug: After Canny edge detection - {} non-zero pixels", edge_pixels);
     
     // Apply SIS threshold
     let sis = SISThreshold;

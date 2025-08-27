@@ -112,6 +112,7 @@ pub struct CannyEdgeDetector {
     high_threshold: u8,
     gaussian_size: usize,
     gaussian_sigma: f64,
+    apply_blur: bool,
 }
 
 impl CannyEdgeDetector {
@@ -121,12 +122,27 @@ impl CannyEdgeDetector {
             high_threshold,
             gaussian_size: 5,
             gaussian_sigma: 1.4,
+            apply_blur: true,
+        }
+    }
+    
+    pub fn new_no_blur(low_threshold: u8, high_threshold: u8) -> Self {
+        Self {
+            low_threshold,
+            high_threshold,
+            gaussian_size: 5,
+            gaussian_sigma: 1.4,
+            apply_blur: false,
         }
     }
 
     pub fn apply_in_place(&self, image: &mut [u8], width: usize, height: usize) {
-        // Apply Gaussian blur
-        let blurred = gaussian_blur(image, width, height, self.gaussian_size, self.gaussian_sigma);
+        // Apply Gaussian blur if enabled
+        let blurred = if self.apply_blur {
+            gaussian_blur(image, width, height, self.gaussian_size, self.gaussian_sigma)
+        } else {
+            image.to_vec()
+        };
         
         // Calculate gradients
         let (gradients, orientations) = calculate_gradients(&blurred, width, height);
