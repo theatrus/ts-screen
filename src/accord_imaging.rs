@@ -661,7 +661,7 @@ fn calculate_sis_threshold(image: &[u8], width: usize, height: usize) -> u8 {
     if weight_total > 0.0 {
         (total / weight_total).round() as u8
     } else {
-        127 // Default threshold if no gradients
+        0 // N.I.N.A. returns 0 when no gradients
     }
 }
 

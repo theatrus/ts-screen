@@ -123,8 +123,20 @@ pub fn detect_stars_with_original(
     // Step 1: Get initial state using both detection and original data
     let state = get_initial_state(detection_data_16bit, original_data_16bit, width, height, params);
     
+    // Debug output for resize factor
+    eprintln!("Debug: Image {}x{}, resize_factor: {:.3}, min_star_size: {}, max_star_size: {}", 
+              width, height, state.resize_factor, state.min_star_size, state.max_star_size);
+    
     // Step 2: Convert 16bpp to 8bpp for edge detection
     let image_8bit = ImageUtility::convert_16bpp_to_8bpp(detection_data_16bit);
+    
+    // Debug: Check 8-bit conversion
+    let min_8bit = *image_8bit.iter().min().unwrap_or(&0);
+    let max_8bit = *image_8bit.iter().max().unwrap_or(&0);
+    let non_zero_count = image_8bit.iter().filter(|&&x| x > 0).count();
+    eprintln!("Debug: 8-bit conversion - min: {}, max: {}, non-zero pixels: {} ({:.2}%)", 
+              min_8bit, max_8bit, non_zero_count, 
+              non_zero_count as f64 / image_8bit.len() as f64 * 100.0);
     
     // Step 3: Noise reduction (if enabled)
     let mut bitmap_to_analyze = if params.noise_reduction != NoiseReduction::None {
@@ -143,11 +155,15 @@ pub fn detect_stars_with_original(
     );
     bitmap_to_analyze = resized_image;
     
+    eprintln!("Debug: Resized to {}x{}", resized_width, resized_height);
+    
     // Step 5: Prepare image for structure detection
     prepare_for_structure_detection(&mut bitmap_to_analyze, resized_width, resized_height, params);
     
     // Step 6: Get structure info
     let blobs = detect_structures(&bitmap_to_analyze, resized_width, resized_height);
+    
+    eprintln!("Debug: Detected {} blobs", blobs.len());
     
     // Step 7: Identify stars
     let (star_list, detected_stars) = identify_stars(params, &state, blobs, resized_width, resized_height);
@@ -190,8 +206,14 @@ fn get_initial_state<'a>(
                 f64::max(2.0 / 3.0, MAX_WIDTH as f64 / width as f64)
             }
             StarSensitivity::High => {
-                // Simplified - not using image scale calculation
-                f64::max(1.0 / 2.0, MAX_WIDTH as f64 / width as f64)
+                // N.I.N.A. uses image scale for High sensitivity
+                // For now, we'll simulate the common case of 1.0-1.5 arcsec/pixel
+                // which uses 1/3 resize factor
+                // TODO: Calculate from FITS headers XPIXSZ/FOCALLEN
+                let simulated_resize = 1.0 / 3.0;
+                
+                // But still respect the MAX_WIDTH limit
+                f64::max(simulated_resize, MAX_WIDTH as f64 / width as f64)
             }
             StarSensitivity::Normal => {
                 MAX_WIDTH as f64 / width as f64
@@ -258,6 +280,10 @@ fn prepare_for_structure_detection(
     let sis = SISThreshold;
     sis.apply_in_place(image, width, height);
     
+    // Debug: Count non-zero pixels after SIS
+    let non_zero = image.iter().filter(|&&p| p > 0).count();
+    eprintln!("Debug: After SIS threshold - {} non-zero pixels", non_zero);
+    
     // Apply binary dilation
     let dilation = BinaryDilation3x3;
     dilation.apply_in_place(image, width, height);
@@ -281,18 +307,25 @@ fn identify_stars(
     let mut sum_radius = 0.0;
     let mut sum_squares = 0.0;
     
+    let mut size_filtered = 0;
+    let mut roi_filtered = 0;
+    let mut failed_detection = 0;
+    let mut edge_filtered = 0;
+    
     for blob in &blobs {
         // Size filtering
         if blob.rectangle.width > state.max_star_size as i32
             || blob.rectangle.height > state.max_star_size as i32
             || blob.rectangle.width < state.min_star_size as i32
             || blob.rectangle.height < state.min_star_size as i32 {
+            size_filtered += 1;
             continue;
         }
         
         // ROI filtering (simplified - not implemented)
         if params.use_roi {
             // TODO: Implement InROI check
+            roi_filtered += 1;
         }
         
         // Scale rectangle back to original coordinates
@@ -382,7 +415,11 @@ fn identify_stars(
                 && star.position.0 < (star.rectangle.x + star.rectangle.width - 2) as f64
                 && star.position.1 < (star.rectangle.y + star.rectangle.height - 2) as f64 {
                 star_list.push(star);
+            } else {
+                edge_filtered += 1;
             }
+        } else {
+            failed_detection += 1;
         }
     }
     
@@ -398,6 +435,9 @@ fn identify_stars(
         let avg = sum_radius / star_list.len() as f64;
         let stdev = ((sum_squares - star_list.len() as f64 * avg * avg) / star_list.len() as f64).sqrt();
         
+        eprintln!("Debug: Before radius filter: {} stars, avg radius: {:.2}, stdev: {:.2}", 
+                  star_list.len(), avg, stdev);
+        
         star_list.retain(|s| match params.sensitivity {
             StarSensitivity::Highest => {
                 // More permissive towards large stars
@@ -407,7 +447,12 @@ fn identify_stars(
                 s.radius <= avg + 1.5 * stdev && s.radius >= avg - 1.5 * stdev
             }
         });
+        
+        eprintln!("Debug: After radius filter: {} stars", star_list.len());
     }
+    
+    eprintln!("Debug: Blob filtering - Size: {}, ROI: {}, Failed detection: {}, Edge: {}", 
+              size_filtered, roi_filtered, failed_detection, edge_filtered);
     
     // Convert to DetectedStar
     let detected: Vec<DetectedStar> = star_list

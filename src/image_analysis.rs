@@ -16,6 +16,7 @@ pub struct ImageStatistics {
     pub star_count: Option<usize>,
     pub hfr: Option<f64>,
     pub fwhm: Option<f64>,
+    pub mad: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -177,8 +178,13 @@ impl FitsImage {
         })
     }
 
-    /// Calculate basic statistics without star detection
+    /// Calculate basic statistics without star detection  
     pub fn calculate_basic_statistics(&self) -> ImageStatistics {
+        self.calculate_statistics_with_mad()
+    }
+    
+    /// Calculate statistics including MAD
+    pub fn calculate_statistics_with_mad(&self) -> ImageStatistics {
         // Use arena for temporary allocation
         let arena = Bump::new();
         let mut sorted_data = bumpalo::vec![in &arena];
@@ -202,6 +208,12 @@ impl FitsImage {
 
         let min = sorted_data[0] as f64;
         let max = sorted_data[sorted_data.len() - 1] as f64;
+        
+        // Calculate MAD (Median Absolute Deviation) using N.I.N.A.'s histogram approach
+        let mad = self.calculate_mad_from_histogram(&sorted_data, median);
+        
+        eprintln!("Debug: Median={:.2}, Calculated MAD={:.2}, Approximation={:.2}", 
+                  median, mad, std_dev * 0.6745);
 
         ImageStatistics {
             width: self.width,
@@ -214,6 +226,7 @@ impl FitsImage {
             star_count: None,
             hfr: None,
             fwhm: None,
+            mad: Some(mad),
         }
     }
     
@@ -249,6 +262,7 @@ impl FitsImage {
             star_count,
             hfr,
             fwhm,
+            mad: stats.mad,
         }
     }
     
@@ -474,6 +488,60 @@ impl FitsImage {
         let stats = self.calculate_basic_statistics();
         let stretched_data = self.apply_nina_stretch(&stats);
         self.detect_stars_on_data(&stretched_data)
+    }
+    
+    /// Calculate MAD using N.I.N.A.'s histogram approach
+    fn calculate_mad_from_histogram(&self, sorted_data: &[u16], median: f64) -> f64 {
+        // Build histogram of pixel values
+        let mut pixel_counts = vec![0u32; 65536];
+        for &val in self.data.iter() {
+            pixel_counts[val as usize] += 1;
+        }
+        
+        // Find median values (handling even vs odd length arrays)
+        let median1 = median.floor() as i32;
+        let median2 = median.ceil() as i32;
+        
+        // Calculate MAD using N.I.N.A.'s algorithm
+        // MAD = median(|x_i - median|)
+        // Since we're looking for the median of absolute deviations,
+        // we start from the median and step outward symmetrically
+        let mut occurrences = 0u32;
+        let medianlength = self.data.len() as f64 / 2.0;
+        let mut idx_down = median1;
+        let mut idx_up = median2;
+        
+        loop {
+            // Count pixels at current deviation distance
+            if idx_down >= 0 && idx_down != idx_up {
+                occurrences += pixel_counts[idx_down as usize] + pixel_counts[idx_up as usize];
+            } else if idx_up >= 0 && idx_up <= 65535 {
+                occurrences += pixel_counts[idx_up as usize];
+            }
+            
+            // Check if we've accumulated more than half the pixels
+            if occurrences as f64 > medianlength {
+                // The MAD is the distance from median to current index
+                return (idx_up as f64 - median).abs();
+            }
+            
+            // Step outward from median
+            idx_up += 1;
+            idx_down -= 1;
+            
+            // Bounds check
+            if idx_up > 65535 {
+                break;
+            }
+        }
+        
+        // This should rarely happen, but provide a fallback
+        // Calculate MAD directly from the data
+        let mut deviations: Vec<f64> = self.data.iter()
+            .map(|&x| (x as f64 - median).abs())
+            .collect();
+        deviations.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        deviations[deviations.len() / 2]
     }
     
     /// Detect stars on provided data (can be stretched or raw)
