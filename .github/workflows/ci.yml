@@ -64,19 +64,19 @@ jobs:
       if: matrix.os == 'ubuntu-22.04'
       uses: actions/upload-artifact@v4
       with:
-        name: ts-screen-linux-x64
-        path: target/release/ts-screen
+        name: psf-guard-linux-x64
+        path: target/release/psf-guard
     
     - name: Upload artifact (Windows)
       if: matrix.os == 'windows-latest'
       uses: actions/upload-artifact@v4
       with:
-        name: ts-screen-windows-x64
-        path: target/release/ts-screen.exe
+        name: psf-guard-windows-x64
+        path: target/release/psf-guard.exe
     
     - name: Upload artifact (macOS)
       if: matrix.os == 'macos-latest'
       uses: actions/upload-artifact@v4
       with:
-        name: ts-screen-macos-x64
-        path: target/release/ts-screen
+        name: psf-guard-macos-x64
+        path: target/release/psf-guard

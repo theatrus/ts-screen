@@ -1,6 +1,6 @@
 # PSF Guard
 
-[![CI](https://github.com/theatrus/ts-screen/actions/workflows/ci.yml/badge.svg)](https://github.com/theatrus/ts-screen/actions/workflows/ci.yml)
+[![CI](https://github.com/theatrus/psf-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/theatrus/psf-guard/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 A Rust utility for analyzing N.I.N.A. (Nighttime Imaging 'N' Astronomy) Target Scheduler plugin databases and managing astronomical image files. While designed to work with the Target Scheduler plugin, many features (like FITS metadata reading) can be used independently of the Target Scheduler.

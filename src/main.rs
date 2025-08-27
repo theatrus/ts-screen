@@ -79,7 +79,11 @@ fn main() -> Result<()> {
                 .with_context(|| format!("Failed to open database: {}", cli.database))?;
             update_grade(&conn, id, &status, reason)?;
         }
-        Commands::ReadFits { path, verbose, format } => {
+        Commands::ReadFits {
+            path,
+            verbose,
+            format,
+        } => {
             read_fits(&path, verbose, &format)?;
         }
     }
