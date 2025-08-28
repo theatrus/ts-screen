@@ -114,7 +114,19 @@ pub fn detect_stars_hocus_focus(
     }
 
     // Step 3: Create structure map by removing large structures
-    let structure_map = create_structure_map(&working_data, width, height, params);
+    let structure_map = match create_structure_map(&working_data, width, height, params) {
+        Ok(map) => map,
+        Err(e) => {
+            eprintln!("Error creating structure map: {}", e);
+            return HocusFocusDetectionResult {
+                stars: vec![],
+                average_hfr: 0.0,
+                average_fwhm: 0.0,
+                noise_sigma: 0.0,
+                background_mean: 0.0,
+            };
+        }
+    };
 
     // Step 4: Estimate noise using Kappa-Sigma method
     let noise_estimate = kappa_sigma_noise_estimate(
@@ -151,7 +163,19 @@ pub fn detect_stars_hocus_focus(
     // Apply erosion to break up connected components
     if non_zero > structure_map.len() / 100 {
         // If more than 1% of pixels are set
-        binary_map = apply_erosion(&binary_map, width, height);
+        binary_map = match apply_erosion(&binary_map, width, height) {
+            Ok(map) => map,
+            Err(e) => {
+                eprintln!("Error applying erosion: {}", e);
+                return HocusFocusDetectionResult {
+                    stars: vec![],
+                    average_hfr: 0.0,
+                    average_fwhm: 0.0,
+                    noise_sigma: 0.0,
+                    background_mean: 0.0,
+                };
+            }
+        };
         let eroded_count = binary_map.iter().filter(|&&x| x).count();
         eprintln!(
             "Debug HocusFocus: After erosion: {} non-zero pixels ({:.2}%)",
@@ -289,20 +313,14 @@ fn create_structure_map(
     width: usize,
     height: usize,
     params: &HocusFocusParams,
-) -> Vec<f64> {
+) -> Result<Vec<f64>, Box<dyn std::error::Error>> {
     let float_data: Vec<f64> = data.iter().map(|&v| v as f64).collect();
 
-    // Compute wavelet decomposition - try OpenCV enhanced version first
-    let residual = {
-        let wavelet_remover = WaveletStructureRemover::new(params.structure_layers);
-        if let Ok(enhanced_residual) = wavelet_remover.remove_structures(&float_data, width, height)
-        {
-            enhanced_residual
-        } else {
-            // Fallback to à trous implementation if OpenCV fails
-            compute_wavelet_residual(&float_data, width, height, params.structure_layers)
-        }
-    };
+    // Compute wavelet decomposition using OpenCV enhanced version
+    let wavelet_remover = WaveletStructureRemover::new(params.structure_layers);
+    let residual = wavelet_remover
+        .remove_structures(&float_data, width, height)
+        .map_err(|e| format!("OpenCV wavelet removal failed: {}", e))?;
 
     // Subtract residual from original to remove large structures
     let mut structure_map = float_data.clone();
@@ -343,65 +361,9 @@ fn create_structure_map(
     let kernel_size = params.structure_layers * 2 + 1;
     smooth_gaussian(&mut structure_map, width, height, kernel_size);
 
-    structure_map
+    Ok(structure_map)
 }
 
-/// Compute wavelet residual layer using à trous B3 spline
-fn compute_wavelet_residual(data: &[f64], width: usize, height: usize, layers: usize) -> Vec<f64> {
-    // À trous ("with holes") B3 spline wavelet decomposition
-    // This creates a sparse filter with zeros between coefficients
-    let mut residual = data.to_vec();
-
-    eprintln!("Debug wavelet: Starting with {} layers", layers);
-
-    for layer in 0..layers {
-        let scale = 1 << layer; // 2^layer - determines spacing between filter coefficients
-        let mut temp = vec![0.0; width * height];
-
-        // B3 spline coefficients: [0.0625, 0.25, 0.375, 0.25, 0.0625]
-        // These are placed at positions: [-2*scale, -scale, 0, scale, 2*scale]
-        let coeffs = [0.0625, 0.25, 0.375, 0.25, 0.0625];
-        let offsets = [-2, -1, 0, 1, 2];
-
-        // Apply separable B3 spline filter with spacing
-        // Horizontal pass
-        for y in 0..height {
-            for x in 0..width {
-                let mut sum = 0.0;
-                let mut weight = 0.0;
-
-                for i in 0..5 {
-                    let sx = x as i32 + offsets[i] * scale as i32;
-                    if sx >= 0 && sx < width as i32 {
-                        sum += residual[y * width + sx as usize] * coeffs[i];
-                        weight += coeffs[i];
-                    }
-                }
-                temp[y * width + x] = if weight > 0.0 { sum / weight } else { 0.0 };
-            }
-        }
-
-        // Vertical pass
-        residual = vec![0.0; width * height];
-        for y in 0..height {
-            for x in 0..width {
-                let mut sum = 0.0;
-                let mut weight = 0.0;
-
-                for i in 0..5 {
-                    let sy = y as i32 + offsets[i] * scale as i32;
-                    if sy >= 0 && sy < height as i32 {
-                        sum += temp[sy as usize * width + x] * coeffs[i];
-                        weight += coeffs[i];
-                    }
-                }
-                residual[y * width + x] = if weight > 0.0 { sum / weight } else { 0.0 };
-            }
-        }
-    }
-
-    residual
-}
 
 /// Smooth with Gaussian kernel
 fn smooth_gaussian(data: &mut [f64], width: usize, height: usize, kernel_size: usize) {
@@ -534,51 +496,16 @@ fn u8_to_bool(data: &[u8]) -> Vec<bool> {
 }
 
 /// Apply morphological erosion to break up connected components
-fn apply_erosion(binary_map: &[bool], width: usize, height: usize) -> Vec<bool> {
+fn apply_erosion(binary_map: &[bool], width: usize, height: usize) -> Result<Vec<bool>, Box<dyn std::error::Error>> {
     // Try OpenCV erosion first
     let mut u8_data = bool_to_u8(binary_map);
     let morphology = OpenCVMorphology::new_ellipse(3); // Ellipse is better for breaking up components
 
-    if morphology
+    morphology
         .erode_in_place(&mut u8_data, width, height)
-        .is_ok()
-    {
-        // OpenCV erosion succeeded
-        return u8_to_bool(&u8_data);
-    }
-
-    // Fallback to original implementation
-    let mut result = vec![false; width * height];
-
-    for y in 1..(height - 1) {
-        for x in 1..(width - 1) {
-            let idx = y * width + x;
-
-            // A pixel stays true only if all 8 neighbors are also true
-            if binary_map[idx] {
-                let mut all_neighbors_set = true;
-                for dy in -1i32..=1 {
-                    for dx in -1i32..=1 {
-                        if dx == 0 && dy == 0 {
-                            continue;
-                        }
-                        let ny = (y as i32 + dy) as usize;
-                        let nx = (x as i32 + dx) as usize;
-                        if !binary_map[ny * width + nx] {
-                            all_neighbors_set = false;
-                            break;
-                        }
-                    }
-                    if !all_neighbors_set {
-                        break;
-                    }
-                }
-                result[idx] = all_neighbors_set;
-            }
-        }
-    }
-
-    result
+        .map_err(|e| format!("OpenCV erosion failed: {}", e))?;
+    
+    Ok(u8_to_bool(&u8_data))
 }
 
 /// Find star candidates from binary map using HocusFocus-style scanning
