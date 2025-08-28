@@ -186,6 +186,44 @@ pub enum Commands {
         #[arg(long)]
         invert: bool,
     },
+
+    /// Create annotated PNG with detected stars marked
+    AnnotateStars {
+        /// Path to FITS file
+        fits_path: String,
+
+        /// Output PNG path (if not provided, uses FITS filename with _annotated.png suffix)
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// Maximum number of stars to annotate (default: 500)
+        #[arg(long, default_value = "500")]
+        max_stars: usize,
+
+        /// Star detection algorithm to use: nina or hocusfocus
+        #[arg(long, default_value = "hocusfocus")]
+        detector: String,
+
+        /// Star detection sensitivity (normal, high, highest) - only for nina detector
+        #[arg(long, default_value = "normal")]
+        sensitivity: String,
+
+        /// MTF midtone balance factor (0.0-1.0, default: 0.2)
+        #[arg(long, default_value = "0.2")]
+        midtone_factor: f64,
+
+        /// Shadow clipping in standard deviations (negative value, default: -2.8)
+        #[arg(long, default_value = "-2.8")]
+        shadow_clipping: f64,
+
+        /// Color for star annotations (red, green, blue, yellow, cyan, magenta, white)
+        #[arg(long, default_value = "red")]
+        annotation_color: String,
+
+        /// Enable verbose debug output
+        #[arg(long, short)]
+        verbose: bool,
+    },
 }
 
 #[derive(Parser, Debug, Clone)]
