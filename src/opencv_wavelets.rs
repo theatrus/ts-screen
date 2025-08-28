@@ -82,7 +82,6 @@ impl WaveletStructureRemover {
                     sigma,
                     sigma,
                     core::BORDER_REFLECT,
-                    core::AlgorithmHint::ALGO_HINT_ACCURATE,
                 )?;
             } else {
                 // For larger scales, use domain transform for better structure preservation

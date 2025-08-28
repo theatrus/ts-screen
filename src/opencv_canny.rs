@@ -4,7 +4,7 @@ use std::error::Error;
 #[cfg(feature = "opencv")]
 use crate::opencv_utils::*;
 #[cfg(feature = "opencv")]
-use opencv::{core, imgproc, prelude::*};
+use opencv::{imgproc, prelude::*};
 
 /// OpenCV-based Canny edge detector
 pub struct OpenCVCanny {
@@ -86,7 +86,6 @@ impl OpenCVCanny {
             sigma,
             sigma,
             opencv::core::BORDER_DEFAULT,
-            core::AlgorithmHint::ALGO_HINT_ACCURATE,
         )?;
 
         // Apply Canny edge detection
@@ -187,7 +186,6 @@ impl OpenCVNoiseReduction {
             sigma,
             sigma,
             opencv::core::BORDER_DEFAULT,
-            core::AlgorithmHint::ALGO_HINT_ACCURATE,
         )?;
 
         // Convert result back to Vec<u8>
