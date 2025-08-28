@@ -1,16 +1,14 @@
 use anyhow::{Context, Result};
-use image::{ImageBuffer, Rgb};
-use image::codecs::png::{PngEncoder, CompressionType, FilterType};
+use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::{ColorType, ImageEncoder};
-use imageproc::drawing::{draw_hollow_circle_mut, draw_filled_circle_mut};
+use image::{ImageBuffer, Rgb};
+use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_circle_mut};
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
 
+use crate::hocus_focus_star_detection::{detect_stars_hocus_focus, HocusFocusParams};
 use crate::image_analysis::FitsImage;
-use crate::hocus_focus_star_detection::{
-    detect_stars_hocus_focus, HocusFocusParams,
-};
 use crate::mtf_stretch::{stretch_image, StretchParameters};
 use crate::nina_star_detection::{
     detect_stars_with_original, StarDetectionParams, StarSensitivity,
@@ -70,11 +68,19 @@ pub fn annotate_stars(
         factor: midtone_factor,
         black_clipping: shadow_clipping,
     };
-    
-    let stretched = stretch_image(&fits.data, &stats, stretch_params.factor, stretch_params.black_clipping);
+
+    let stretched = stretch_image(
+        &fits.data,
+        &stats,
+        stretch_params.factor,
+        stretch_params.black_clipping,
+    );
 
     if verbose {
-        eprintln!("Applied MTF stretch with factor {} and shadow clipping {}", midtone_factor, shadow_clipping);
+        eprintln!(
+            "Applied MTF stretch with factor {} and shadow clipping {}",
+            midtone_factor, shadow_clipping
+        );
     }
 
     // Detect stars using the selected algorithm
@@ -97,10 +103,13 @@ pub fn annotate_stars(
                 use_roi: false,
             };
             let result = detect_stars_with_original(&stretched, &fits.data, width, height, &params);
-            
+
             if verbose {
                 eprintln!("Detected {} stars", result.star_list.len());
-                eprintln!("Average HFR: {:.3}, Std Dev: {:.3}", result.average_hfr, result.hfr_std_dev);
+                eprintln!(
+                    "Average HFR: {:.3}, Std Dev: {:.3}",
+                    result.average_hfr, result.hfr_std_dev
+                );
             }
 
             // Convert to common format
@@ -118,7 +127,7 @@ pub fn annotate_stars(
             let params = HocusFocusParams::default();
             let result = detect_stars_hocus_focus(&fits.data, width, height, &params);
             let stars = result.stars;
-            
+
             if verbose {
                 eprintln!("Detected {} stars", stars.len());
                 if !stars.is_empty() {
@@ -145,12 +154,16 @@ pub fn annotate_stars(
     let stars_to_annotate: Vec<_> = stars_sorted.into_iter().take(max_stars).collect();
 
     if verbose {
-        eprintln!("Annotating {} stars (top {} by HFR)", stars_to_annotate.len(), max_stars);
+        eprintln!(
+            "Annotating {} stars (top {} by HFR)",
+            stars_to_annotate.len(),
+            max_stars
+        );
     }
 
     // Convert stretched 16-bit data to 8-bit RGB
     let mut rgb_image = ImageBuffer::<Rgb<u8>, Vec<u8>>::new(width as u32, height as u32);
-    
+
     for (x, y, pixel) in rgb_image.enumerate_pixels_mut() {
         let idx = y as usize * width + x as usize;
         let value = (stretched[idx] >> 8) as u8; // Convert 16-bit to 8-bit
@@ -165,10 +178,10 @@ pub fn annotate_stars(
         // Calculate circle radius based on HFR
         // Use 2.5 * HFR for circle radius, with minimum of 5 pixels
         let radius = (hfr * 2.5).max(5.0) as i32;
-        
+
         // Draw hollow circle
         draw_hollow_circle_mut(&mut rgb_image, (*x as i32, *y as i32), radius, color);
-        
+
         // For very small stars, also draw a filled center point
         if radius < 8 {
             draw_filled_circle_mut(&mut rgb_image, (*x as i32, *y as i32), 1, color);
@@ -185,29 +198,37 @@ pub fn annotate_stars(
     let file = File::create(&output_path)
         .with_context(|| format!("Failed to create output file: {}", output_path))?;
     let writer = BufWriter::new(file);
-    
+
     // Create PNG encoder with best compression
-    let encoder = PngEncoder::new_with_quality(
-        writer,
-        CompressionType::Best,
-        FilterType::Adaptive
-    );
-    
+    let encoder = PngEncoder::new_with_quality(writer, CompressionType::Best, FilterType::Adaptive);
+
     // Write the image data
-    encoder.write_image(
-        &rgb_image,
-        width as u32,
-        height as u32,
-        ColorType::Rgb8.into()
-    ).with_context(|| format!("Failed to write PNG image to {}", output_path))?;
+    encoder
+        .write_image(
+            &rgb_image,
+            width as u32,
+            height as u32,
+            ColorType::Rgb8.into(),
+        )
+        .with_context(|| format!("Failed to write PNG image to {}", output_path))?;
 
     println!("Created annotated image: {}", output_path);
-    println!("Annotated {} stars out of {} detected", stars_to_annotate.len(), total_stars);
+    println!(
+        "Annotated {} stars out of {} detected",
+        stars_to_annotate.len(),
+        total_stars
+    );
 
     if verbose && !stars_to_annotate.is_empty() {
         println!("\nTop 10 stars by HFR:");
         for (i, (x, y, hfr)) in stars_to_annotate.iter().take(10).enumerate() {
-            println!("  {}. Position: ({:.1}, {:.1}), HFR: {:.3}", i + 1, x, y, hfr);
+            println!(
+                "  {}. Position: ({:.1}, {:.1}), HFR: {:.3}",
+                i + 1,
+                x,
+                y,
+                hfr
+            );
         }
     }
 

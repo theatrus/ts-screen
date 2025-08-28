@@ -4,11 +4,7 @@ use std::error::Error;
 #[cfg(feature = "opencv")]
 use crate::opencv_utils::*;
 #[cfg(feature = "opencv")]
-use opencv::{
-    core,
-    imgproc,
-    prelude::*,
-};
+use opencv::{core, imgproc, prelude::*};
 
 /// OpenCV-based Canny edge detector
 pub struct OpenCVCanny {
@@ -24,7 +20,7 @@ impl OpenCVCanny {
         Self {
             low_threshold: low_threshold as f64,
             high_threshold: high_threshold as f64,
-            aperture_size: 3,  // Standard Sobel kernel size
+            aperture_size: 3,   // Standard Sobel kernel size
             l2_gradient: false, // Use L1 gradient (faster)
         }
     }
@@ -41,7 +37,12 @@ impl OpenCVCanny {
 
     /// Apply Canny edge detection to an image
     #[cfg(feature = "opencv")]
-    pub fn apply(&self, image: &[u8], width: usize, height: usize) -> Result<Vec<u8>, Box<dyn Error>> {
+    pub fn apply(
+        &self,
+        image: &[u8],
+        width: usize,
+        height: usize,
+    ) -> Result<Vec<u8>, Box<dyn Error>> {
         // Create Mat from raw data
         let src = create_mat_from_u8(image, width, height)?;
 
@@ -78,7 +79,15 @@ impl OpenCVCanny {
         // Apply Gaussian blur
         let mut blurred = Mat::default();
         let ksize = opencv::core::Size::new(blur_size, blur_size);
-        imgproc::gaussian_blur(&src, &mut blurred, ksize, sigma, sigma, opencv::core::BORDER_DEFAULT, core::AlgorithmHint::ALGO_HINT_ACCURATE)?;
+        imgproc::gaussian_blur(
+            &src,
+            &mut blurred,
+            ksize,
+            sigma,
+            sigma,
+            opencv::core::BORDER_DEFAULT,
+            core::AlgorithmHint::ALGO_HINT_ACCURATE,
+        )?;
 
         // Apply Canny edge detection
         let mut edges = Mat::default();
@@ -97,7 +106,12 @@ impl OpenCVCanny {
 
     /// Fallback implementation when OpenCV is not available
     #[cfg(not(feature = "opencv"))]
-    pub fn apply(&self, image: &[u8], width: usize, height: usize) -> Result<Vec<u8>, Box<dyn Error>> {
+    pub fn apply(
+        &self,
+        image: &[u8],
+        width: usize,
+        height: usize,
+    ) -> Result<Vec<u8>, Box<dyn Error>> {
         Err("OpenCV support not compiled in. Canny edge detection requires OpenCV.".into())
     }
 
@@ -139,7 +153,11 @@ impl OpenCVThreshold {
     }
 
     #[cfg(not(feature = "opencv"))]
-    pub fn apply_sis(_image: &[u8], _width: usize, _height: usize) -> Result<Vec<u8>, Box<dyn Error>> {
+    pub fn apply_sis(
+        _image: &[u8],
+        _width: usize,
+        _height: usize,
+    ) -> Result<Vec<u8>, Box<dyn Error>> {
         Err("OpenCV support not compiled in. Thresholding requires OpenCV.".into())
     }
 }
@@ -150,14 +168,27 @@ pub struct OpenCVNoiseReduction;
 impl OpenCVNoiseReduction {
     /// Apply Gaussian blur for noise reduction
     #[cfg(feature = "opencv")]
-    pub fn gaussian_blur(image: &[u8], width: usize, height: usize, sigma: f64) -> Result<Vec<u8>, Box<dyn Error>> {
+    pub fn gaussian_blur(
+        image: &[u8],
+        width: usize,
+        height: usize,
+        sigma: f64,
+    ) -> Result<Vec<u8>, Box<dyn Error>> {
         // Create Mat from raw data
         let src = create_mat_from_u8(image, width, height)?;
 
         // Apply Gaussian blur
         let mut dst = Mat::default();
         let ksize = opencv::core::Size::new(0, 0); // Auto-calculate from sigma
-        imgproc::gaussian_blur(&src, &mut dst, ksize, sigma, sigma, opencv::core::BORDER_DEFAULT, core::AlgorithmHint::ALGO_HINT_ACCURATE)?;
+        imgproc::gaussian_blur(
+            &src,
+            &mut dst,
+            ksize,
+            sigma,
+            sigma,
+            opencv::core::BORDER_DEFAULT,
+            core::AlgorithmHint::ALGO_HINT_ACCURATE,
+        )?;
 
         // Convert result back to Vec<u8>
         Ok(mat_to_u8_vec(&dst)?)
@@ -165,7 +196,12 @@ impl OpenCVNoiseReduction {
 
     /// Apply median filter for noise reduction
     #[cfg(feature = "opencv")]
-    pub fn median_blur(image: &[u8], width: usize, height: usize, ksize: i32) -> Result<Vec<u8>, Box<dyn Error>> {
+    pub fn median_blur(
+        image: &[u8],
+        width: usize,
+        height: usize,
+        ksize: i32,
+    ) -> Result<Vec<u8>, Box<dyn Error>> {
         // Create Mat from raw data
         let src = create_mat_from_u8(image, width, height)?;
 
@@ -178,12 +214,22 @@ impl OpenCVNoiseReduction {
     }
 
     #[cfg(not(feature = "opencv"))]
-    pub fn gaussian_blur(_image: &[u8], _width: usize, _height: usize, _sigma: f64) -> Result<Vec<u8>, Box<dyn Error>> {
+    pub fn gaussian_blur(
+        _image: &[u8],
+        _width: usize,
+        _height: usize,
+        _sigma: f64,
+    ) -> Result<Vec<u8>, Box<dyn Error>> {
         Err("OpenCV support not compiled in. Gaussian blur requires OpenCV.".into())
     }
 
     #[cfg(not(feature = "opencv"))]
-    pub fn median_blur(_image: &[u8], _width: usize, _height: usize, _ksize: i32) -> Result<Vec<u8>, Box<dyn Error>> {
+    pub fn median_blur(
+        _image: &[u8],
+        _width: usize,
+        _height: usize,
+        _ksize: i32,
+    ) -> Result<Vec<u8>, Box<dyn Error>> {
         Err("OpenCV support not compiled in. Median blur requires OpenCV.".into())
     }
 }
@@ -194,7 +240,11 @@ pub struct OpenCVBinaryMorphology;
 impl OpenCVBinaryMorphology {
     /// Apply binary dilation with 3x3 kernel
     #[cfg(feature = "opencv")]
-    pub fn dilate_3x3(image: &[u8], width: usize, height: usize) -> Result<Vec<u8>, Box<dyn Error>> {
+    pub fn dilate_3x3(
+        image: &[u8],
+        width: usize,
+        height: usize,
+    ) -> Result<Vec<u8>, Box<dyn Error>> {
         // Create Mat from raw data
         let src = create_mat_from_u8(image, width, height)?;
 
@@ -222,7 +272,11 @@ impl OpenCVBinaryMorphology {
     }
 
     #[cfg(not(feature = "opencv"))]
-    pub fn dilate_3x3(_image: &[u8], _width: usize, _height: usize) -> Result<Vec<u8>, Box<dyn Error>> {
+    pub fn dilate_3x3(
+        _image: &[u8],
+        _width: usize,
+        _height: usize,
+    ) -> Result<Vec<u8>, Box<dyn Error>> {
         Err("OpenCV support not compiled in. Morphology operations require OpenCV.".into())
     }
 }

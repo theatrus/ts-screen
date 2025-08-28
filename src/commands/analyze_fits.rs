@@ -43,15 +43,9 @@ pub fn analyze_fits_and_compare(
     if compare_all {
         // Generate all combinations of detector configurations
         let configs = generate_detector_configs();
-        
+
         if fits_path.is_file() {
-            compare_single_fits_all_detectors(
-                conn,
-                fits_path,
-                format,
-                apply_stretch,
-                &configs,
-            )?;
+            compare_single_fits_all_detectors(conn, fits_path, format, apply_stretch, &configs)?;
         } else if fits_path.is_dir() {
             println!("Comparison mode for directories not yet implemented");
             return Ok(());
@@ -89,7 +83,7 @@ pub fn analyze_fits_and_compare(
 
 fn generate_detector_configs() -> Vec<DetectorConfig> {
     let mut configs = vec![];
-    
+
     // NINA detector configurations
     for sensitivity in &["normal", "high", "highest"] {
         configs.push(DetectorConfig {
@@ -98,14 +92,14 @@ fn generate_detector_configs() -> Vec<DetectorConfig> {
             sensitivity: sensitivity.to_string(),
         });
     }
-    
+
     // HocusFocus configuration (always tries OpenCV first with automatic fallback)
     configs.push(DetectorConfig {
         name: "HocusFocus".to_string(),
         detector: "hocusfocus".to_string(),
         sensitivity: "normal".to_string(),
     });
-    
+
     configs
 }
 
@@ -167,46 +161,54 @@ fn compare_single_fits_all_detectors(
             println!("\n=== Detector Comparison Results ===\n");
             println!("File: {}", filename);
             println!("Dimensions: {}x{}", fits.width, fits.height);
-            println!("Statistics: Min={}, Max={}, Mean={:.2}, Median={:.2}, MAD={:.2}",
-                computed_stats.min, computed_stats.max, 
-                computed_stats.mean, computed_stats.median, 
-                computed_stats.mad.unwrap_or(0.0));
+            println!(
+                "Statistics: Min={}, Max={}, Mean={:.2}, Median={:.2}, MAD={:.2}",
+                computed_stats.min,
+                computed_stats.max,
+                computed_stats.mean,
+                computed_stats.median,
+                computed_stats.mad.unwrap_or(0.0)
+            );
 
             if let Some((nina_stars, nina_hfr)) = db_info {
-                println!("N.I.N.A. Database: {} stars, HFR={:.3}", nina_stars, nina_hfr);
+                println!(
+                    "N.I.N.A. Database: {} stars, HFR={:.3}",
+                    nina_stars, nina_hfr
+                );
             }
 
-            println!("\n{:<30} | {:>8} | {:>10} | {:>10}", "Detector", "Stars", "Avg HFR", "HFR StdDev");
+            println!(
+                "\n{:<30} | {:>8} | {:>10} | {:>10}",
+                "Detector", "Stars", "Avg HFR", "HFR StdDev"
+            );
             println!("{:-<30}-+-{:-<8}-+-{:-<10}-+-{:-<10}", "", "", "", "");
         }
     }
 
     // Run each detector configuration
     for config in configs {
-        let result = run_detector_config(
-            &fits,
-            &computed_stats,
-            config,
-            apply_stretch,
-        );
+        let result = run_detector_config(&fits, &computed_stats, config, apply_stretch);
 
         match format {
             "csv" => {
                 if let Ok((star_count, avg_hfr, hfr_std)) = result {
-                    println!("{},{},{:.3},{:.3}", config.name, star_count, avg_hfr, hfr_std);
+                    println!(
+                        "{},{},{:.3},{:.3}",
+                        config.name, star_count, avg_hfr, hfr_std
+                    );
                 }
             }
-            _ => {
-                match result {
-                    Ok((star_count, avg_hfr, hfr_std)) => {
-                        println!("{:<30} | {:>8} | {:>10.3} | {:>10.3}", 
-                            config.name, star_count, avg_hfr, hfr_std);
-                    }
-                    Err(e) => {
-                        println!("{:<30} | ERROR: {}", config.name, e);
-                    }
+            _ => match result {
+                Ok((star_count, avg_hfr, hfr_std)) => {
+                    println!(
+                        "{:<30} | {:>8} | {:>10.3} | {:>10.3}",
+                        config.name, star_count, avg_hfr, hfr_std
+                    );
                 }
-            }
+                Err(e) => {
+                    println!("{:<30} | ERROR: {}", config.name, e);
+                }
+            },
         }
     }
 
@@ -235,38 +237,61 @@ fn run_detector_config(
 
             // NINA always uses MTF stretch
             let stretch_params = StretchParameters::default();
-            let stretched = stretch_image(&fits.data, computed_stats, stretch_params.factor, stretch_params.black_clipping);
-            
-            let result = detect_stars_with_original(&stretched, &fits.data, fits.width, fits.height, &params);
-            
-            Ok((result.star_list.len(), result.average_hfr, result.hfr_std_dev))
+            let stretched = stretch_image(
+                &fits.data,
+                computed_stats,
+                stretch_params.factor,
+                stretch_params.black_clipping,
+            );
+
+            let result = detect_stars_with_original(
+                &stretched,
+                &fits.data,
+                fits.width,
+                fits.height,
+                &params,
+            );
+
+            Ok((
+                result.star_list.len(),
+                result.average_hfr,
+                result.hfr_std_dev,
+            ))
         }
         "hocusfocus" => {
             let params = HocusFocusParams::default();
 
             let detection_data = if apply_stretch {
                 let stretch_params = StretchParameters::default();
-                stretch_image(&fits.data, computed_stats, stretch_params.factor, stretch_params.black_clipping)
+                stretch_image(
+                    &fits.data,
+                    computed_stats,
+                    stretch_params.factor,
+                    stretch_params.black_clipping,
+                )
             } else {
                 fits.data.clone()
             };
 
-            let result = detect_stars_hocus_focus(&detection_data, fits.width, fits.height, &params);
-            
+            let result =
+                detect_stars_hocus_focus(&detection_data, fits.width, fits.height, &params);
+
             if result.stars.is_empty() {
                 Ok((0, 0.0, 0.0))
             } else {
                 let hfr_values: Vec<f64> = result.stars.iter().map(|s| s.hfr).collect();
                 let avg_hfr = hfr_values.iter().sum::<f64>() / hfr_values.len() as f64;
-                let variance = hfr_values.iter()
+                let variance = hfr_values
+                    .iter()
                     .map(|&hfr| (hfr - avg_hfr).powi(2))
-                    .sum::<f64>() / hfr_values.len() as f64;
+                    .sum::<f64>()
+                    / hfr_values.len() as f64;
                 let std_dev = variance.sqrt();
-                
+
                 Ok((result.stars.len(), avg_hfr, std_dev))
             }
         }
-        _ => Err(anyhow::anyhow!("Unknown detector: {}", config.detector))
+        _ => Err(anyhow::anyhow!("Unknown detector: {}", config.detector)),
     }
 }
 
@@ -290,22 +315,40 @@ fn analyze_single_fits(
     let computed_stats = fits.calculate_basic_statistics();
 
     // Perform star detection
-    let (star_count, avg_hfr, hfr_std, detection_info) = detect_stars(
-        &fits,
-        &computed_stats,
-        detector,
-        sensitivity,
-        apply_stretch,
-    )?;
+    let (star_count, avg_hfr, hfr_std, detection_info) =
+        detect_stars(&fits, &computed_stats, detector, sensitivity, apply_stretch)?;
 
     // Look for matching database entries
     let db_info = get_database_info(conn, filename)?;
 
     // Output results based on format
     match format {
-        "json" => output_json(&computed_stats, star_count, avg_hfr, hfr_std, db_info, &detection_info, filename),
-        "csv" => output_csv(filename, &computed_stats, star_count, avg_hfr, hfr_std, db_info),
-        _ => output_table(filename, &computed_stats, star_count, avg_hfr, hfr_std, db_info, &detection_info),
+        "json" => output_json(
+            &computed_stats,
+            star_count,
+            avg_hfr,
+            hfr_std,
+            db_info,
+            &detection_info,
+            filename,
+        ),
+        "csv" => output_csv(
+            filename,
+            &computed_stats,
+            star_count,
+            avg_hfr,
+            hfr_std,
+            db_info,
+        ),
+        _ => output_table(
+            filename,
+            &computed_stats,
+            star_count,
+            avg_hfr,
+            hfr_std,
+            db_info,
+            &detection_info,
+        ),
     }
 
     Ok(())
@@ -400,13 +443,29 @@ fn detect_stars(
 
             // NINA always uses MTF stretch
             let stretch_params = StretchParameters::default();
-            let stretched = stretch_image(&fits.data, computed_stats, stretch_params.factor, stretch_params.black_clipping);
-            
-            let result = detect_stars_with_original(&stretched, &fits.data, fits.width, fits.height, &params);
-            
+            let stretched = stretch_image(
+                &fits.data,
+                computed_stats,
+                stretch_params.factor,
+                stretch_params.black_clipping,
+            );
+
+            let result = detect_stars_with_original(
+                &stretched,
+                &fits.data,
+                fits.width,
+                fits.height,
+                &params,
+            );
+
             detection_info = format!("NINA {} sensitivity", sensitivity);
-            
-            Ok((result.star_list.len(), result.average_hfr, result.hfr_std_dev, detection_info))
+
+            Ok((
+                result.star_list.len(),
+                result.average_hfr,
+                result.hfr_std_dev,
+                detection_info,
+            ))
         }
         "hocusfocus" => {
             println!("  Using OpenCV with automatic fallback");
@@ -415,13 +474,19 @@ fn detect_stars(
 
             let detection_data = if apply_stretch {
                 let stretch_params = StretchParameters::default();
-                stretch_image(&fits.data, computed_stats, stretch_params.factor, stretch_params.black_clipping)
+                stretch_image(
+                    &fits.data,
+                    computed_stats,
+                    stretch_params.factor,
+                    stretch_params.black_clipping,
+                )
             } else {
                 fits.data.clone()
             };
 
-            let result = detect_stars_hocus_focus(&detection_data, fits.width, fits.height, &params);
-            
+            let result =
+                detect_stars_hocus_focus(&detection_data, fits.width, fits.height, &params);
+
             detection_info = "HocusFocus".to_string();
 
             if result.stars.is_empty() {
@@ -430,15 +495,17 @@ fn detect_stars(
                 // Calculate statistics
                 let hfr_values: Vec<f64> = result.stars.iter().map(|s| s.hfr).collect();
                 let avg_hfr = hfr_values.iter().sum::<f64>() / hfr_values.len() as f64;
-                let variance = hfr_values.iter()
+                let variance = hfr_values
+                    .iter()
                     .map(|&hfr| (hfr - avg_hfr).powi(2))
-                    .sum::<f64>() / hfr_values.len() as f64;
+                    .sum::<f64>()
+                    / hfr_values.len() as f64;
                 let std_dev = variance.sqrt();
-                
+
                 Ok((result.stars.len(), avg_hfr, std_dev, detection_info))
             }
         }
-        _ => Err(anyhow::anyhow!("Unknown detector: {}", detector))
+        _ => Err(anyhow::anyhow!("Unknown detector: {}", detector)),
     }
 }
 
@@ -446,13 +513,13 @@ fn get_database_info(conn: &Connection, filename: &str) -> Result<Option<(i32, f
     // Simple query to find images by filename pattern
     let query = "SELECT metadata FROM acquiredimage WHERE metadata LIKE ?";
     let pattern = format!("%{}%", filename);
-    
+
     let mut stmt = conn.prepare(query)?;
     let mut rows = stmt.query([&pattern])?;
-    
+
     while let Some(row) = rows.next()? {
         let metadata_json: String = row.get(0)?;
-        
+
         // Try to parse the metadata
         if let Ok(metadata) = serde_json::from_str::<ImageMetadata>(&metadata_json) {
             // Check if filename matches
@@ -465,7 +532,7 @@ fn get_database_info(conn: &Connection, filename: &str) -> Result<Option<(i32, f
             }
         }
     }
-    
+
     Ok(None)
 }
 
@@ -496,10 +563,10 @@ fn output_table(
         println!("\nDatabase Comparison:");
         println!("  N.I.N.A. Stars: {}", nina_stars);
         println!("  N.I.N.A. HFR: {:.3}", nina_hfr);
-        
+
         let star_diff = (star_count as f64 - nina_stars as f64) / nina_stars as f64 * 100.0;
         let hfr_diff = (avg_hfr - nina_hfr) / nina_hfr * 100.0;
-        
+
         println!("  Star Count Difference: {:.1}%", star_diff);
         println!("  HFR Difference: {:.1}%", hfr_diff);
     } else {
@@ -554,7 +621,8 @@ fn output_csv(
 ) {
     let (db_stars, db_hfr) = db_info.unwrap_or((0, 0.0));
 
-    println!("{},{},{},{:.2},{:.2},{:.2},{},{:.3},{:.3},{},{:.3}",
+    println!(
+        "{},{},{},{:.2},{:.2},{:.2},{},{:.3},{:.3},{},{:.3}",
         filename,
         computed_stats.min,
         computed_stats.max,

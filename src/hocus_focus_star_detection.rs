@@ -45,7 +45,6 @@ impl Default for HocusFocusParams {
             noise_reduction_radius: 4, // Actual default from user
 
             // OpenCV operations always attempted with automatic fallback
-
             structure_layers: 4,
             noise_clipping_multiplier: 4.0,
             star_clipping_multiplier: 2.0,
@@ -364,7 +363,6 @@ fn create_structure_map(
     Ok(structure_map)
 }
 
-
 /// Smooth with Gaussian kernel
 fn smooth_gaussian(data: &mut [f64], width: usize, height: usize, kernel_size: usize) {
     let sigma = kernel_size as f64 / 3.0;
@@ -496,7 +494,11 @@ fn u8_to_bool(data: &[u8]) -> Vec<bool> {
 }
 
 /// Apply morphological erosion to break up connected components
-fn apply_erosion(binary_map: &[bool], width: usize, height: usize) -> Result<Vec<bool>, Box<dyn std::error::Error>> {
+fn apply_erosion(
+    binary_map: &[bool],
+    width: usize,
+    height: usize,
+) -> Result<Vec<bool>, Box<dyn std::error::Error>> {
     // Try OpenCV erosion first
     let mut u8_data = bool_to_u8(binary_map);
     let morphology = OpenCVMorphology::new_ellipse(3); // Ellipse is better for breaking up components
@@ -504,7 +506,7 @@ fn apply_erosion(binary_map: &[bool], width: usize, height: usize) -> Result<Vec
     morphology
         .erode_in_place(&mut u8_data, width, height)
         .map_err(|e| format!("OpenCV erosion failed: {}", e))?;
-    
+
     Ok(u8_to_bool(&u8_data))
 }
 

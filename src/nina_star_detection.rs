@@ -1,7 +1,9 @@
 /// Exact implementation of N.I.N.A.'s star detection algorithm
 /// Based on StarDetection.cs from N.I.N.A. source code
 use crate::accord_imaging::*;
-use crate::opencv_canny::{OpenCVCanny, OpenCVThreshold, OpenCVBinaryMorphology, OpenCVNoiseReduction};
+use crate::opencv_canny::{
+    OpenCVBinaryMorphology, OpenCVCanny, OpenCVNoiseReduction, OpenCVThreshold,
+};
 use crate::opencv_contours::OpenCVBlobDetector;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -344,7 +346,7 @@ fn prepare_for_structure_detection(
             canny.apply(image, width, height)
         }
     };
-    
+
     match canny_result {
         Ok(edges) => {
             // Copy result back to image
