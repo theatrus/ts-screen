@@ -34,6 +34,10 @@ rand = "0.8"
 # OpenCV integration for advanced computer vision
 opencv = { version = "0.95", optional = true }
 
+[features]
+default = ["opencv"]
+opencv = ["dep:opencv"]
+
 [profile.release]
 # Enable maximum optimizations for performance
 opt-level = 3

@@ -509,14 +509,17 @@ set OPENCV_LINK_LIBS=opencv_world
 #### Building
 
 ```bash
-# Build with OpenCV support
-cargo build --features opencv
-
-# Build without OpenCV (pure Rust fallbacks)
+# Build with OpenCV support (default)
 cargo build
 
-# Run tests with OpenCV
-cargo test --features opencv
+# Build without OpenCV (pure Rust fallbacks)
+cargo build --no-default-features
+
+# Run tests with OpenCV (default)
+cargo test
+
+# Run tests without OpenCV
+cargo test --no-default-features
 ```
 
 ### Benefits of OpenCV Integration

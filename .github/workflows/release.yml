@@ -29,6 +29,54 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Install OpenCV dependencies (Ubuntu)
+      if: matrix.os == 'ubuntu-22.04'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libopencv-dev clang libclang-dev
+    
+    - name: Install OpenCV dependencies (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install opencv
+        
+        # Set up libclang path for macOS to avoid dyld errors
+        # Try both XCode and Command Line Tools paths
+        if [ -d "$(xcode-select --print-path)/Toolchains/XcodeDefault.xctoolchain/usr/lib/" ]; then
+          echo "DYLD_FALLBACK_LIBRARY_PATH=$(xcode-select --print-path)/Toolchains/XcodeDefault.xctoolchain/usr/lib/" >> $GITHUB_ENV
+        else
+          echo "DYLD_FALLBACK_LIBRARY_PATH=$(xcode-select --print-path)/usr/lib/" >> $GITHUB_ENV
+        fi
+    
+    - name: Cache vcpkg (Windows)
+      if: matrix.os == 'windows-latest'
+      id: vcpkg-cache
+      uses: actions/cache@v4
+      with:
+        path: C:\vcpkg
+        key: ${{ runner.os }}-vcpkg-opencv4-v2
+    
+    - name: Install OpenCV dependencies (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        # Install vcpkg if not cached
+        if (!(Test-Path "C:\vcpkg")) {
+          git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+          C:\vcpkg\bootstrap-vcpkg.bat
+        }
+        
+        C:\vcpkg\vcpkg integrate install
+        
+        # Install OpenCV if not already installed
+        if (!(Test-Path "C:\vcpkg\installed\x64-windows\include\opencv2")) {
+          C:\vcpkg\vcpkg install opencv4[contrib,nonfree]:x64-windows
+        }
+        
+        # Set environment variables
+        echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+        echo "OpenCV_DIR=C:\vcpkg\installed\x64-windows" >> $env:GITHUB_ENV
+      shell: pwsh
+    
     - name: Install Rust
       uses: dtolnay/rust-toolchain@master
       with:
