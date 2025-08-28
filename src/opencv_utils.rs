@@ -1,32 +1,34 @@
 use opencv::prelude::*;
-use opencv::{core, imgproc, Result as OpenCVResult};
+use opencv::{core, Result as OpenCVResult};
 use anyhow::{Result, Context};
 
 /// Convert u16 slice to OpenCV Mat for image processing
 pub fn create_mat_from_u16(data: &[u16], width: usize, height: usize) -> OpenCVResult<core::Mat> {
-    let mat = unsafe {
-        core::Mat::new_rows_cols_with_data(
-            height as i32,
-            width as i32,
-            core::CV_16UC1,
-            data.as_ptr() as *mut core::c_void,
-            core::Mat_AUTO_STEP,
-        )?
-    };
+    // Create a new Mat and copy data
+    let mut mat = core::Mat::zeros(height as i32, width as i32, core::CV_16UC1)?.to_mat()?;
+    
+    // Copy data into the Mat
+    for (i, &val) in data.iter().enumerate() {
+        let row = (i / width) as i32;
+        let col = (i % width) as i32;
+        *mat.at_2d_mut::<u16>(row, col)? = val;
+    }
+    
     Ok(mat)
 }
 
 /// Convert u8 slice to OpenCV Mat for image processing
 pub fn create_mat_from_u8(data: &[u8], width: usize, height: usize) -> OpenCVResult<core::Mat> {
-    let mat = unsafe {
-        core::Mat::new_rows_cols_with_data(
-            height as i32,
-            width as i32,
-            core::CV_8UC1,
-            data.as_ptr() as *mut core::c_void,
-            core::Mat_AUTO_STEP,
-        )?
-    };
+    // Create a new Mat and copy data
+    let mut mat = core::Mat::zeros(height as i32, width as i32, core::CV_8UC1)?.to_mat()?;
+    
+    // Copy data into the Mat
+    for (i, &val) in data.iter().enumerate() {
+        let row = (i / width) as i32;
+        let col = (i % width) as i32;
+        *mat.at_2d_mut::<u8>(row, col)? = val;
+    }
+    
     Ok(mat)
 }
 

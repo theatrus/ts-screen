@@ -1,7 +1,6 @@
 #[cfg(feature = "opencv")]
-use opencv::prelude::*;
 #[cfg(feature = "opencv")]
-use opencv::{core, imgproc, Result as OpenCVResult};
+use opencv::{core, imgproc};
 #[cfg(feature = "opencv")]
 use crate::opencv_utils::*;
 use anyhow::Result;
@@ -44,15 +43,12 @@ impl OpenCVBlobDetector {
     pub fn analyze_star_contours(&self, binary_image: &[u8], width: usize, height: usize) -> Result<Vec<StarContour>> {
         let mat = create_mat_from_u8(binary_image, width, height)?;
         let mut contours = core::Vector::<core::Vector<core::Point>>::new();
-        let mut hierarchy = core::Vector::<core::Vec4i>::new();
         
-        imgproc::find_contours(
+        imgproc::find_contours_def(
             &mat, 
             &mut contours, 
-            &mut hierarchy,
             imgproc::RETR_EXTERNAL, 
-            imgproc::CHAIN_APPROX_SIMPLE, 
-            core::Point::new(0, 0)
+            imgproc::CHAIN_APPROX_SIMPLE
         )?;
         
         let mut stars = Vec::new();
@@ -81,15 +77,10 @@ impl OpenCVBlobDetector {
             }
             
             // Calculate convexity: Area/ConvexArea
-            let mut hull = core::Vector::<i32>::new();
+            let mut hull = core::Vector::<core::Point>::new();
             imgproc::convex_hull_def(&contour, &mut hull)?;
             
-            let hull_points = hull.iter().map(|&idx| {
-                contour.get(idx as usize).unwrap_or(core::Point::new(0, 0))
-            }).collect::<Vec<_>>();
-            
-            let hull_vector = core::Vector::from_iter(hull_points);
-            let convex_area = imgproc::contour_area(&hull_vector, false)?;
+            let convex_area = imgproc::contour_area(&hull, false)?;
             
             let convexity = if convex_area > 0.0 {
                 area / convex_area

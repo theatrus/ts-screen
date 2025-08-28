@@ -1,7 +1,8 @@
 #[cfg(feature = "opencv")]
-use opencv::prelude::*;
 #[cfg(feature = "opencv")]
-use opencv::{core, imgproc, Result as OpenCVResult};
+use opencv::{core, imgproc};
+#[cfg(feature = "opencv")]
+use opencv::imgproc::morphology_default_border_value;
 #[cfg(feature = "opencv")]
 use crate::opencv_utils::*;
 use anyhow::Result;
@@ -62,7 +63,7 @@ impl OpenCVMorphology {
             core::Point::new(-1, -1),
             1, // iterations
             core::BORDER_REFLECT,
-            core::morphology_default_border_value()?,
+            morphology_default_border_value()?,
         )?;
         
         copy_mat_to_u8(&result, image)?;
@@ -95,6 +96,7 @@ impl OpenCVMorphology {
             core::Point::new(-1, -1),
             1, // iterations
             core::BORDER_REFLECT,
+            morphology_default_border_value()?,
         )?;
         
         copy_mat_to_u8(&result, image)?;
@@ -127,6 +129,7 @@ impl OpenCVMorphology {
             core::Point::new(-1, -1),
             1, // iterations
             core::BORDER_REFLECT,
+            morphology_default_border_value()?,
         )?;
         
         copy_mat_to_u8(&result, image)?;
@@ -157,7 +160,7 @@ impl OpenCVMorphology {
             core::Point::new(-1, -1),
             1, // iterations
             core::BORDER_REFLECT,
-            core::morphology_default_border_value()?,
+            morphology_default_border_value()?,
         )?;
         
         copy_mat_to_u8(&result, image)?;
@@ -211,7 +214,7 @@ impl OpenCVMorphology {
         self.dilate_in_place(image, width, height)
     }
     
-    pub fn erode_in_place(&self, image: &mut [u8], width: usize, height: usize) -> Result<()> {
+    pub fn erode_in_place(&self, _image: &mut [u8], _width: usize, _height: usize) -> Result<()> {
         // Simple fallback - do nothing for now
         Ok(())
     }

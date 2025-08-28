@@ -1,9 +1,11 @@
 #[cfg(feature = "opencv")]
 use opencv::prelude::*;
 #[cfg(feature = "opencv")]
-use opencv::{core, imgproc, Result as OpenCVResult};
+use opencv::{core, imgproc};
 #[cfg(feature = "opencv")]
-use crate::opencv_utils::*;
+use opencv::ximgproc::dt_filter;
+#[cfg(feature = "opencv")]
+use opencv::photo::{edge_preserving_filter, RECURS_FILTER};
 use anyhow::Result;
 
 /// Wavelet-based structure removal for astronomical images
@@ -47,16 +49,14 @@ impl WaveletStructureRemover {
     /// Enhanced structure removal using OpenCV filters
     fn remove_structures_opencv(&self, data: &[f64], width: usize, height: usize) -> Result<Vec<f64>> {
         // Convert to OpenCV format
-        let f32_data: Vec<f32> = data.iter().map(|&x| x as f32).collect();
-        let mat = unsafe {
-            core::Mat::new_rows_cols_with_data(
-                height as i32,
-                width as i32,
-                core::CV_32F,
-                f32_data.as_ptr() as *mut core::c_void,
-                core::Mat_AUTO_STEP,
-            )?
-        };
+        let mut mat = core::Mat::zeros(height as i32, width as i32, core::CV_32F)?.to_mat()?;
+        
+        // Copy data into the Mat
+        for (i, &val) in data.iter().enumerate() {
+            let row = (i / width) as i32;
+            let col = (i % width) as i32;
+            *mat.at_2d_mut::<f32>(row, col)? = val as f32;
+        }
         
         let mut residual = mat.clone();
         
@@ -77,21 +77,25 @@ impl WaveletStructureRemover {
                     sigma,
                     sigma,
                     core::BORDER_REFLECT,
+                    core::AlgorithmHint::ALGO_HINT_ACCURATE,
                 )?;
             } else {
                 // For larger scales, use domain transform for better structure preservation
-                imgproc::dt_filter(
+                dt_filter(
                     &residual,
                     &residual, // Use residual as guide image
                     &mut filtered,
-                    10.0 * scale as f64, // sigma_color
-                    0.1, // sigma_space
+                    10.0 * scale as f64, // sigma_s (spatial sigma)
+                    0.1, // sigma_r (range sigma)
+                    opencv::ximgproc::DTF_NC, // mode
                     1, // num_iters
                 )?;
             }
             
             // Subtract this layer from residual
-            core::subtract(&residual, &filtered, &mut residual, &core::no_array(), -1)?;
+            let mut temp_residual = core::Mat::default();
+            core::subtract(&residual, &filtered, &mut temp_residual, &core::no_array(), -1)?;
+            residual = temp_residual;
         }
         
         // Convert back to Vec<f64>
@@ -187,27 +191,24 @@ impl WaveletStructureRemover {
     /// Apply edge-preserving smoothing before wavelet decomposition
     #[cfg(feature = "opencv")]
     pub fn preprocess_with_edge_preserving(&self, data: &[f64], width: usize, height: usize) -> Result<Vec<f64>> {
-        let f32_data: Vec<f32> = data.iter().map(|&x| x as f32).collect();
-        let mat = unsafe {
-            core::Mat::new_rows_cols_with_data(
-                height as i32,
-                width as i32,
-                core::CV_32F,
-                f32_data.as_ptr() as *mut core::c_void,
-                core::Mat_AUTO_STEP,
-            )?
-        };
+        let mut mat = core::Mat::zeros(height as i32, width as i32, core::CV_32F)?.to_mat()?;
+        
+        // Copy data into the Mat
+        for (i, &val) in data.iter().enumerate() {
+            let row = (i / width) as i32;
+            let col = (i % width) as i32;
+            *mat.at_2d_mut::<f32>(row, col)? = val as f32;
+        }
         
         let mut smoothed = core::Mat::default();
         
         // Edge-preserving filter to reduce noise while preserving star edges
-        imgproc::edge_preserving_filter(
+        edge_preserving_filter(
             &mat,
             &mut smoothed,
-            imgproc::RECURS_FILTER, // or NORMCONV_FILTER
+            RECURS_FILTER, // or NORMCONV_FILTER
             50.0, // sigma_s (spatial sigma)
             0.4,  // sigma_r (range sigma - lower preserves more edges)
-            &core::no_array(),
         )?;
         
         // Convert back
