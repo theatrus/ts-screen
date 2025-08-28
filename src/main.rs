@@ -86,6 +86,7 @@ fn main() -> Result<()> {
             detector,
             sensitivity,
             apply_stretch,
+            verbose,
         } => {
             let conn = Connection::open(&cli.database)
                 .with_context(|| format!("Failed to open database: {}", cli.database))?;
@@ -98,6 +99,7 @@ fn main() -> Result<()> {
                 &detector,
                 &sensitivity,
                 apply_stretch,
+                verbose,
             )?;
         }
         Commands::StretchToPng {

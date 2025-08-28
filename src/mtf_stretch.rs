@@ -92,7 +92,7 @@ fn get_stretch_map_with_bit_depth(
     // Generate mapping for each possible pixel value
     for i in 0..map.len() {
         let value = normalize_u16(i as u16, bit_depth);
-        let input_value = (1.0 - highlights + value - shadows).clamp(0.0, 1.0);
+        let input_value = 1.0 - highlights + value - shadows;
         let stretched = midtones_transfer_function(midtones, input_value);
         map[i] = denormalize_u16(stretched);
 
@@ -124,8 +124,13 @@ fn normalize_u16(value: u16, bit_depth: u8) -> f64 {
 }
 
 /// Denormalize 0-1 value back to 16-bit range
+/// Matches NINA's DenormalizeUShort exactly
 fn denormalize_u16(value: f64) -> u16 {
-    (value.clamp(0.0, 1.0) * 65535.0).round() as u16
+    // NINA: return (ushort)(val * ushort.MaxValue + (val < 0.5 ? 0.5 : 0.0));
+    let clamped = value.clamp(0.0, 1.0);
+    let scaled = clamped * 65535.0;
+    let rounded = if scaled < 32767.5 { scaled + 0.5 } else { scaled };
+    rounded as u16
 }
 
 /// Midtones Transfer Function (MTF)

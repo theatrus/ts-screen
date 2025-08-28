@@ -152,9 +152,13 @@ pub enum Commands {
         #[arg(long, default_value = "normal")]
         sensitivity: String,
 
-        /// Apply MTF stretch before detection
-        #[arg(long)]
+        /// Apply MTF stretch before detection (enabled by default, use --no-apply-stretch to disable)
+        #[arg(long, default_value = "true")]
         apply_stretch: bool,
+
+        /// Enable verbose debug output
+        #[arg(long, short)]
+        verbose: bool,
     },
 
     /// Convert FITS to PNG with MTF stretch applied

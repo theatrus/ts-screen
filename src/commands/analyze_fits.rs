@@ -18,6 +18,7 @@ pub fn analyze_fits_and_compare(
     detector: &str,
     sensitivity: &str,
     apply_stretch: bool,
+    verbose: bool,
 ) -> Result<()> {
     let db = Database::new(conn);
     let fits_path = Path::new(fits_path);

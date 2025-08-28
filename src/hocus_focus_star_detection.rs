@@ -7,6 +7,8 @@
 /// - Kappa-Sigma noise estimation for adaptive thresholding
 /// - Hot pixel filtering
 /// - Multi-criteria star validation
+use crate::opencv_morphology::OpenCVMorphology;
+use crate::opencv_wavelets::WaveletStructureRemover;
 
 /// Star detection parameters for HocusFocus algorithm
 #[derive(Debug, Clone)]
@@ -15,6 +17,11 @@ pub struct HocusFocusParams {
     pub hotpixel_filtering: bool,
     pub hotpixel_threshold: f64, // Percent of max ADU for hot pixel threshold
     pub noise_reduction_radius: usize, // Half-size of Gaussian kernel
+
+    // OpenCV enhancements
+    pub use_opencv_morphology: bool, // Use OpenCV for morphological operations
+    pub use_opencv_wavelets: bool,   // Use OpenCV-enhanced wavelet processing
+    pub use_opencv_contours: bool,   // Use OpenCV contour analysis for star detection
 
     // Structure detection
     pub structure_layers: usize, // Number of wavelet layers for large structure removal
@@ -39,6 +46,12 @@ impl Default for HocusFocusParams {
             hotpixel_filtering: true,
             hotpixel_threshold: 0.001, // 0.1% of max ADU
             noise_reduction_radius: 4, // Actual default from user
+            
+            // OpenCV enhancements (default enabled when available)
+            use_opencv_morphology: true,
+            use_opencv_wavelets: true,
+            use_opencv_contours: true,
+            
             structure_layers: 4,
             noise_clipping_multiplier: 4.0,
             star_clipping_multiplier: 2.0,
@@ -285,8 +298,19 @@ fn create_structure_map(
 ) -> Vec<f64> {
     let float_data: Vec<f64> = data.iter().map(|&v| v as f64).collect();
 
-    // Compute wavelet decomposition
-    let residual = compute_wavelet_residual(&float_data, width, height, params.structure_layers);
+    // Compute wavelet decomposition - use OpenCV enhanced version if enabled
+    let residual = if params.use_opencv_wavelets {
+        let wavelet_remover = WaveletStructureRemover::new(params.structure_layers);
+        if let Ok(enhanced_residual) = wavelet_remover.remove_structures(&float_data, width, height) {
+            enhanced_residual
+        } else {
+            // Fallback to original implementation if OpenCV fails
+            compute_wavelet_residual(&float_data, width, height, params.structure_layers)
+        }
+    } else {
+        // Use original à trous implementation
+        compute_wavelet_residual(&float_data, width, height, params.structure_layers)
+    };
 
     // Subtract residual from original to remove large structures
     let mut structure_map = float_data.clone();
@@ -504,8 +528,28 @@ fn binarize(data: &[f64], threshold: f64) -> Vec<bool> {
     data.iter().map(|&v| v > threshold).collect()
 }
 
+/// Convert bool vector to u8 vector for OpenCV processing
+fn bool_to_u8(binary_map: &[bool]) -> Vec<u8> {
+    binary_map.iter().map(|&b| if b { 255u8 } else { 0u8 }).collect()
+}
+
+/// Convert u8 vector back to bool vector
+fn u8_to_bool(data: &[u8]) -> Vec<bool> {
+    data.iter().map(|&v| v > 127).collect()
+}
+
 /// Apply morphological erosion to break up connected components
 fn apply_erosion(binary_map: &[bool], width: usize, height: usize) -> Vec<bool> {
+    // Try OpenCV erosion first
+    let mut u8_data = bool_to_u8(binary_map);
+    let morphology = OpenCVMorphology::new_ellipse(3); // Ellipse is better for breaking up components
+    
+    if morphology.erode_in_place(&mut u8_data, width, height).is_ok() {
+        // OpenCV erosion succeeded
+        return u8_to_bool(&u8_data);
+    }
+    
+    // Fallback to original implementation
     let mut result = vec![false; width * height];
 
     for y in 1..(height - 1) {
