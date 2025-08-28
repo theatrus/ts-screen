@@ -61,7 +61,7 @@ fn detect_opencv_version() {
                 }
                 _ => {
                     // If we can't detect version, assume older version
-                    eprintln!("cargo:warning=Could not detect OpenCV version, assuming < 4.9");
+                    eprintln!("cargo:warning=Could not detect OpenCV version, assuming older");
                     return;
                 }
             }
@@ -76,11 +76,17 @@ fn detect_opencv_version() {
         let major = parts[0].parse::<u32>().unwrap_or(0);
         let minor = parts[1].parse::<u32>().unwrap_or(0);
 
-        // OpenCV 4.9+ added the AlgorithmHint parameter to gaussian_blur
-        if major > 4 || (major == 4 && minor >= 9) {
+        // AlgorithmHint was added in OpenCV 4.11+ (not present in 4.10)
+        // We're being conservative and only enabling for 4.12+ where we know it exists
+        if major > 4 || (major == 4 && minor >= 12) {
             println!("cargo:rustc-cfg=opencv_has_algorithm_hint");
             eprintln!(
                 "cargo:warning=OpenCV {} detected, enabling algorithm_hint feature",
+                version
+            );
+        } else {
+            eprintln!(
+                "cargo:warning=OpenCV {} detected, algorithm_hint not available",
                 version
             );
         }
