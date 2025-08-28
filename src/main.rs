@@ -87,6 +87,9 @@ fn main() -> Result<()> {
             detector,
             sensitivity,
             apply_stretch,
+            use_opencv_morphology,
+            use_opencv_wavelets,
+            compare_all,
             verbose,
         } => {
             let conn = Connection::open(&cli.database)
@@ -100,6 +103,9 @@ fn main() -> Result<()> {
                 &detector,
                 &sensitivity,
                 apply_stretch,
+                use_opencv_morphology,
+                use_opencv_wavelets,
+                compare_all,
                 verbose,
             )?;
         }

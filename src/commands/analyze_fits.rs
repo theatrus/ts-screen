@@ -1,630 +1,439 @@
-use crate::db::Database;
 use crate::hocus_focus_star_detection::{detect_stars_hocus_focus, HocusFocusParams};
 use crate::image_analysis::{FitsImage, ImageStatistics as ComputedStats};
 use crate::mtf_stretch::{stretch_image, StretchParameters};
 use crate::nina_star_detection::{
     detect_stars_with_original, NoiseReduction, StarDetectionParams, StarSensitivity,
 };
-use anyhow::{Context, Result};
+use crate::models::AcquiredImage;
+use anyhow::Result;
 use rusqlite::Connection;
+use serde::Deserialize;
 use std::path::{Path, PathBuf};
+
+#[derive(Debug, Deserialize)]
+struct ImageMetadata {
+    #[serde(rename = "FileName")]
+    filename: Option<String>,
+    #[serde(rename = "HFR")]
+    hfr: Option<f64>,
+    #[serde(rename = "DetectedStars")]
+    detected_stars: Option<i32>,
+}
+
+#[derive(Debug, Clone)]
+struct DetectorConfig {
+    name: String,
+    detector: String,
+    sensitivity: String,
+    use_opencv_morphology: bool,
+    use_opencv_wavelets: bool,
+}
 
 pub fn analyze_fits_and_compare(
     conn: &Connection,
     fits_path: &str,
-    project_filter: Option<String>,
-    target_filter: Option<String>,
+    _project_filter: Option<String>,
+    _target_filter: Option<String>,
     format: &str,
     detector: &str,
     sensitivity: &str,
     apply_stretch: bool,
+    use_opencv_morphology: bool,
+    use_opencv_wavelets: bool,
+    compare_all: bool,
     _verbose: bool,
 ) -> Result<()> {
-    let db = Database::new(conn);
     let fits_path = Path::new(fits_path);
 
-    if fits_path.is_file() {
-        analyze_single_fits(
-            &db,
-            fits_path,
-            project_filter,
-            target_filter,
-            format,
-            detector,
-            sensitivity,
-            apply_stretch,
-        )?;
-    } else if fits_path.is_dir() {
-        analyze_fits_directory(
-            &db,
-            fits_path,
-            project_filter,
-            target_filter,
-            format,
-            detector,
-            sensitivity,
-            apply_stretch,
-        )?;
+    if compare_all {
+        // Generate all combinations of detector configurations
+        let configs = generate_detector_configs();
+        
+        if fits_path.is_file() {
+            compare_single_fits_all_detectors(
+                conn,
+                fits_path,
+                format,
+                apply_stretch,
+                &configs,
+            )?;
+        } else if fits_path.is_dir() {
+            println!("Comparison mode for directories not yet implemented");
+            return Ok(());
+        }
     } else {
-        return Err(anyhow::anyhow!(
-            "Path does not exist or is not accessible: {}",
-            fits_path.display()
-        ));
+        // Single detector mode
+        if fits_path.is_file() {
+            analyze_single_fits(
+                conn,
+                fits_path,
+                format,
+                detector,
+                sensitivity,
+                apply_stretch,
+                use_opencv_morphology,
+                use_opencv_wavelets,
+            )?;
+        } else if fits_path.is_dir() {
+            analyze_fits_directory(
+                conn,
+                fits_path,
+                format,
+                detector,
+                sensitivity,
+                apply_stretch,
+                use_opencv_morphology,
+                use_opencv_wavelets,
+            )?;
+        } else {
+            return Err(anyhow::anyhow!(
+                "Path does not exist or is not accessible: {}",
+                fits_path.display()
+            ));
+        }
     }
 
     Ok(())
 }
 
-fn analyze_single_fits(
-    db: &Database,
+fn generate_detector_configs() -> Vec<DetectorConfig> {
+    let mut configs = vec![];
+    
+    // NINA detector configurations
+    for sensitivity in &["normal", "high", "highest"] {
+        configs.push(DetectorConfig {
+            name: format!("NINA-{}", sensitivity),
+            detector: "nina".to_string(),
+            sensitivity: sensitivity.to_string(),
+            use_opencv_morphology: false,
+            use_opencv_wavelets: false,
+        });
+    }
+    
+    // HocusFocus configurations
+    // Check if OpenCV is available
+    #[cfg(feature = "opencv")]
+    {
+        // Full OpenCV
+        configs.push(DetectorConfig {
+            name: "HocusFocus-OpenCV-Full".to_string(),
+            detector: "hocusfocus".to_string(),
+            sensitivity: "normal".to_string(),
+            use_opencv_morphology: true,
+            use_opencv_wavelets: true,
+        });
+        
+        // OpenCV morphology only
+        configs.push(DetectorConfig {
+            name: "HocusFocus-OpenCV-Morphology".to_string(),
+            detector: "hocusfocus".to_string(),
+            sensitivity: "normal".to_string(),
+            use_opencv_morphology: true,
+            use_opencv_wavelets: false,
+        });
+        
+        // OpenCV wavelets only
+        configs.push(DetectorConfig {
+            name: "HocusFocus-OpenCV-Wavelets".to_string(),
+            detector: "hocusfocus".to_string(),
+            sensitivity: "normal".to_string(),
+            use_opencv_morphology: false,
+            use_opencv_wavelets: true,
+        });
+    }
+    
+    // Pure Rust fallback
+    configs.push(DetectorConfig {
+        name: "HocusFocus-PureRust".to_string(),
+        detector: "hocusfocus".to_string(),
+        sensitivity: "normal".to_string(),
+        use_opencv_morphology: false,
+        use_opencv_wavelets: false,
+    });
+    
+    configs
+}
+
+fn compare_single_fits_all_detectors(
+    conn: &Connection,
     fits_path: &Path,
-    project_filter: Option<String>,
-    target_filter: Option<String>,
     format: &str,
-    detector: &str,
-    sensitivity: &str,
     apply_stretch: bool,
+    configs: &[DetectorConfig],
 ) -> Result<()> {
     let filename = fits_path
         .file_name()
         .and_then(|n| n.to_str())
-        .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
+        .unwrap_or("unknown");
 
     println!("Analyzing FITS file: {}", fits_path.display());
 
-    // Load and analyze the FITS image
-    let image = FitsImage::from_file(fits_path)
-        .with_context(|| format!("Failed to load FITS image: {}", fits_path.display()))?;
+    // Load the FITS file once
+    let fits = FitsImage::from_file(fits_path)?;
+    let computed_stats = fits.calculate_basic_statistics();
 
-    let mut computed_stats = image.calculate_statistics();
+    // Get database info if available
+    let db_info = get_database_info(conn, filename)?;
+
+    match format {
+        "csv" => {
+            println!("Detector,Stars,AvgHFR,HFRStdDev");
+        }
+        "json" => {
+            let mut results = vec![];
+            for config in configs {
+                let result = run_detector_config(&fits, &computed_stats, config, apply_stretch);
+                if let Ok((star_count, avg_hfr, hfr_std)) = result {
+                    results.push(serde_json::json!({
+                        "detector": config.name,
+                        "stars": star_count,
+                        "avg_hfr": avg_hfr,
+                        "hfr_std_dev": hfr_std,
+                    }));
+                }
+            }
+            let output = serde_json::json!({
+                "file": filename,
+                "dimensions": format!("{}x{}", fits.width, fits.height),
+                "statistics": {
+                    "min": computed_stats.min,
+                    "max": computed_stats.max,
+                    "mean": computed_stats.mean,
+                    "median": computed_stats.median,
+                    "mad": computed_stats.mad.unwrap_or(0.0),
+                },
+                "database": db_info,
+                "detectors": results,
+            });
+            println!("{}", serde_json::to_string_pretty(&output)?);
+            return Ok(());
+        }
+        _ => {
+            println!("\n=== Detector Comparison Results ===\n");
+            println!("File: {}", filename);
+            println!("Dimensions: {}x{}", fits.width, fits.height);
+            println!("Statistics: Min={}, Max={}, Mean={:.2}, Median={:.2}, MAD={:.2}",
+                computed_stats.min, computed_stats.max, 
+                computed_stats.mean, computed_stats.median, 
+                computed_stats.mad.unwrap_or(0.0));
+
+            if let Some((nina_stars, nina_hfr)) = db_info {
+                println!("N.I.N.A. Database: {} stars, HFR={:.3}", nina_stars, nina_hfr);
+            }
+
+            println!("\n{:<30} | {:>8} | {:>10} | {:>10}", "Detector", "Stars", "Avg HFR", "HFR StdDev");
+            println!("{:-<30}-+-{:-<8}-+-{:-<10}-+-{:-<10}", "", "", "", "");
+        }
+    }
+
+    // Run each detector configuration
+    for config in configs {
+        let result = run_detector_config(
+            &fits,
+            &computed_stats,
+            config,
+            apply_stretch,
+        );
+
+        match format {
+            "csv" => {
+                if let Ok((star_count, avg_hfr, hfr_std)) = result {
+                    println!("{},{},{:.3},{:.3}", config.name, star_count, avg_hfr, hfr_std);
+                }
+            }
+            _ => {
+                match result {
+                    Ok((star_count, avg_hfr, hfr_std)) => {
+                        println!("{:<30} | {:>8} | {:>10.3} | {:>10.3}", 
+                            config.name, star_count, avg_hfr, hfr_std);
+                    }
+                    Err(e) => {
+                        println!("{:<30} | ERROR: {}", config.name, e);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn run_detector_config(
+    fits: &FitsImage,
+    computed_stats: &ComputedStats,
+    config: &DetectorConfig,
+    apply_stretch: bool,
+) -> Result<(usize, f64, f64)> {
+    match config.detector.as_str() {
+        "nina" => {
+            let star_sensitivity = match config.sensitivity.as_str() {
+                "high" => StarSensitivity::High,
+                "highest" => StarSensitivity::Highest,
+                _ => StarSensitivity::Normal,
+            };
+
+            let params = StarDetectionParams {
+                sensitivity: star_sensitivity,
+                noise_reduction: NoiseReduction::None,
+                use_roi: false,
+            };
+
+            // NINA always uses MTF stretch
+            let stretch_params = StretchParameters::default();
+            let stretched = stretch_image(&fits.data, computed_stats, stretch_params.factor, stretch_params.black_clipping);
+            
+            let result = detect_stars_with_original(&stretched, &fits.data, fits.width, fits.height, &params);
+            
+            Ok((result.star_list.len(), result.average_hfr, result.hfr_std_dev))
+        }
+        "hocusfocus" => {
+            let mut params = HocusFocusParams::default();
+            params.use_opencv_morphology = config.use_opencv_morphology;
+            params.use_opencv_wavelets = config.use_opencv_wavelets;
+
+            let detection_data = if apply_stretch {
+                let stretch_params = StretchParameters::default();
+                stretch_image(&fits.data, computed_stats, stretch_params.factor, stretch_params.black_clipping)
+            } else {
+                fits.data.clone()
+            };
+
+            let result = detect_stars_hocus_focus(&detection_data, fits.width, fits.height, &params);
+            
+            if result.stars.is_empty() {
+                Ok((0, 0.0, 0.0))
+            } else {
+                let hfr_values: Vec<f64> = result.stars.iter().map(|s| s.hfr).collect();
+                let avg_hfr = hfr_values.iter().sum::<f64>() / hfr_values.len() as f64;
+                let variance = hfr_values.iter()
+                    .map(|&hfr| (hfr - avg_hfr).powi(2))
+                    .sum::<f64>() / hfr_values.len() as f64;
+                let std_dev = variance.sqrt();
+                
+                Ok((result.stars.len(), avg_hfr, std_dev))
+            }
+        }
+        _ => Err(anyhow::anyhow!("Unknown detector: {}", config.detector))
+    }
+}
+
+fn analyze_single_fits(
+    conn: &Connection,
+    fits_path: &Path,
+    format: &str,
+    detector: &str,
+    sensitivity: &str,
+    apply_stretch: bool,
+    use_opencv_morphology: bool,
+    use_opencv_wavelets: bool,
+) -> Result<()> {
+    let filename = fits_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown");
+
+    println!("Analyzing FITS file: {}", fits_path.display());
+
+    // Load the FITS file
+    let fits = FitsImage::from_file(fits_path)?;
+    let computed_stats = fits.calculate_basic_statistics();
 
     // Perform star detection
-    perform_star_detection(
-        &image,
-        &mut computed_stats,
+    let (star_count, avg_hfr, hfr_std, detection_info) = detect_stars(
+        &fits,
+        &computed_stats,
         detector,
         sensitivity,
         apply_stretch,
+        use_opencv_morphology,
+        use_opencv_wavelets,
     )?;
 
-    // Try to find corresponding database entry
-    let db_entries = find_database_entry(db, filename, project_filter, target_filter)?;
+    // Look for matching database entries
+    let db_info = get_database_info(conn, filename)?;
 
-    match format.to_lowercase().as_str() {
-        "json" => output_json_comparison(&computed_stats, &db_entries, filename)?,
-        "csv" => output_csv_comparison(&computed_stats, &db_entries, filename)?,
-        _ => output_table_comparison(&computed_stats, &db_entries, filename)?,
+    // Output results based on format
+    match format {
+        "json" => output_json(&computed_stats, star_count, avg_hfr, hfr_std, db_info, &detection_info, filename),
+        "csv" => output_csv(filename, &computed_stats, star_count, avg_hfr, hfr_std, db_info),
+        _ => output_table(filename, &computed_stats, star_count, avg_hfr, hfr_std, db_info, &detection_info),
     }
 
     Ok(())
 }
 
 fn analyze_fits_directory(
-    db: &Database,
-    fits_dir: &Path,
-    project_filter: Option<String>,
-    target_filter: Option<String>,
+    conn: &Connection,
+    dir_path: &Path,
     format: &str,
     detector: &str,
     sensitivity: &str,
     apply_stretch: bool,
+    use_opencv_morphology: bool,
+    use_opencv_wavelets: bool,
 ) -> Result<()> {
     let mut fits_files = Vec::new();
-    find_fits_files(fits_dir, &mut fits_files)?;
+
+    // Recursively find all FITS files
+    fn find_fits_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                find_fits_files(&path, files)?;
+            } else if let Some(ext) = path.extension() {
+                if ext == "fits" || ext == "fit" || ext == "FIT" || ext == "FITS" {
+                    files.push(path);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    find_fits_files(dir_path, &mut fits_files)?;
 
     if fits_files.is_empty() {
-        println!("No FITS files found in directory: {}", fits_dir.display());
+        println!("No FITS files found in directory: {}", dir_path.display());
         return Ok(());
     }
 
-    println!(
-        "Analyzing {} FITS files in: {}",
-        fits_files.len(),
-        fits_dir.display()
-    );
+    println!("Found {} FITS files to analyze", fits_files.len());
 
-    match format.to_lowercase().as_str() {
-        "csv" => {
-            println!("filename,computed_hfr,computed_stars,computed_mean,computed_median,computed_stddev,db_hfr,db_stars,db_status,project,target,hfr_diff,star_diff");
-        }
-        "json" => {
-            println!("[");
-        }
-        _ => {}
+    // CSV header for CSV format
+    if format == "csv" {
+        println!("Filename,Min,Max,Mean,Median,MAD,DetectedStars,AvgHFR,HFRStdDev,DBStars,DBHFR");
     }
 
-    let mut results = Vec::new();
-    let mut processed_count = 0;
-    let mut error_count = 0;
-
-    for (index, fits_path) in fits_files.iter().enumerate() {
-        let filename = fits_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown");
-
-        match analyze_fits_file(
-            db,
-            fits_path,
-            filename,
-            &project_filter,
-            &target_filter,
+    for fits_path in fits_files {
+        if let Err(e) = analyze_single_fits(
+            conn,
+            &fits_path,
+            format,
             detector,
             sensitivity,
             apply_stretch,
+            use_opencv_morphology,
+            use_opencv_wavelets,
         ) {
-            Ok(result) => {
-                processed_count += 1;
-
-                match format.to_lowercase().as_str() {
-                    "json" => {
-                        let json_result = serde_json::to_string_pretty(&result)?;
-                        print!("{}", json_result);
-                        if index < fits_files.len() - 1 {
-                            println!(",");
-                        } else {
-                            println!();
-                        }
-                    }
-                    "csv" => {
-                        output_csv_result(&result)?;
-                    }
-                    _ => {
-                        results.push(result);
-                    }
-                }
-            }
-            Err(_) => {
-                error_count += 1;
-                if format == "table" {
-                    eprintln!("Error processing: {}", filename);
-                }
-            }
-        }
-    }
-
-    match format.to_lowercase().as_str() {
-        "json" => {
-            println!("]");
-        }
-        "csv" => {
-            // CSV output already printed per-file
-        }
-        _ => {
-            // Print table format summary
-            println!(
-                "\n{:<30} {:<8} {:<8} {:<8} {:<8} {:<12} {:<12}",
-                "Filename", "C_HFR", "C_Stars", "DB_HFR", "DB_Stars", "HFR_Diff", "Status"
-            );
-            println!("{:-<100}", "");
-
-            for result in results {
-                println!(
-                    "{:<30} {:<8.3} {:<8} {:<8.3} {:<8} {:<12.3} {:<12}",
-                    truncate_string(&result.filename, 30),
-                    result.computed_stats.hfr.unwrap_or(0.0),
-                    result.computed_stats.star_count.unwrap_or(0),
-                    result.database_hfr.unwrap_or(0.0),
-                    result.database_stars.unwrap_or(0),
-                    result.hfr_difference.unwrap_or(0.0),
-                    result.database_status.unwrap_or("Unknown".to_string())
-                );
-            }
-
-            println!("\nSummary:");
-            println!("  Successfully processed: {}", processed_count);
-            if error_count > 0 {
-                println!("  Errors: {}", error_count);
-            }
+            eprintln!("Error analyzing {}: {}", fits_path.display(), e);
         }
     }
 
     Ok(())
 }
 
-#[derive(Debug, serde::Serialize)]
-struct AnalysisResult {
-    filename: String,
-    computed_stats: ComputedStats,
-    database_hfr: Option<f64>,
-    database_stars: Option<i32>,
-    database_status: Option<String>,
-    database_project: Option<String>,
-    database_target: Option<String>,
-    hfr_difference: Option<f64>,
-    star_difference: Option<i32>,
-    found_in_database: bool,
-}
-
-fn analyze_fits_file(
-    db: &Database,
-    fits_path: &Path,
-    filename: &str,
-    project_filter: &Option<String>,
-    target_filter: &Option<String>,
+fn detect_stars(
+    fits: &FitsImage,
+    computed_stats: &ComputedStats,
     detector: &str,
     sensitivity: &str,
     apply_stretch: bool,
-) -> Result<AnalysisResult> {
-    // Load and analyze the FITS image
-    let image = FitsImage::from_file(fits_path)?;
-    let mut computed_stats = image.calculate_statistics();
+    use_opencv_morphology: bool,
+    use_opencv_wavelets: bool,
+) -> Result<(usize, f64, f64, String)> {
+    let detection_info;
 
-    // Perform star detection
-    perform_star_detection(
-        &image,
-        &mut computed_stats,
-        detector,
-        sensitivity,
-        apply_stretch,
-    )?;
-
-    // Try to find corresponding database entry
-    let db_entries =
-        find_database_entry(db, filename, project_filter.clone(), target_filter.clone())?;
-
-    let (
-        database_hfr,
-        database_stars,
-        database_status,
-        database_project,
-        database_target,
-        hfr_diff,
-        star_diff,
-        found,
-    ) = if let Some(entry) = db_entries.first() {
-        let db_hfr = entry.hfr;
-        let db_stars = entry.detected_stars;
-        let hfr_diff = if let (Some(computed), Some(db)) = (computed_stats.hfr, db_hfr) {
-            Some(computed - db)
-        } else {
-            None
-        };
-        let star_diff = if let (Some(computed), Some(db)) = (computed_stats.star_count, db_stars) {
-            Some(computed as i32 - db)
-        } else {
-            None
-        };
-
-        (
-            db_hfr,
-            db_stars,
-            Some(match entry.grading_status {
-                0 => "Pending".to_string(),
-                1 => "Accepted".to_string(),
-                2 => "Rejected".to_string(),
-                _ => "Unknown".to_string(),
-            }),
-            Some(entry.project_name.clone()),
-            Some(entry.target_name.clone()),
-            hfr_diff,
-            star_diff,
-            true,
-        )
-    } else {
-        (None, None, None, None, None, None, None, false)
-    };
-
-    Ok(AnalysisResult {
-        filename: filename.to_string(),
-        computed_stats,
-        database_hfr,
-        database_stars,
-        database_status,
-        database_project,
-        database_target,
-        hfr_difference: hfr_diff,
-        star_difference: star_diff,
-        found_in_database: found,
-    })
-}
-
-#[derive(Debug)]
-struct DatabaseEntry {
-    hfr: Option<f64>,
-    detected_stars: Option<i32>,
-    grading_status: i32,
-    project_name: String,
-    target_name: String,
-}
-
-fn find_database_entry(
-    db: &Database,
-    filename: &str,
-    project_filter: Option<String>,
-    target_filter: Option<String>,
-) -> Result<Vec<DatabaseEntry>> {
-    // Query database for images with matching filename
-    let images = db.query_images(
-        None,
-        project_filter.as_deref(),
-        target_filter.as_deref(),
-        None,
-    )?;
-
-    let mut matches = Vec::new();
-
-    for (image, project_name, target_name) in images {
-        // Parse metadata JSON to check filename
-        if let Ok(metadata_json) = serde_json::from_str::<serde_json::Value>(&image.metadata) {
-            if let Some(db_filename) = metadata_json.get("FileName").and_then(|f| f.as_str()) {
-                let db_filename = db_filename
-                    .split(&['\\', '/'][..])
-                    .next_back()
-                    .unwrap_or(db_filename);
-
-                if db_filename == filename {
-                    let hfr = metadata_json.get("HFR").and_then(|h| h.as_f64());
-                    let detected_stars = metadata_json
-                        .get("DetectedStars")
-                        .and_then(|s| s.as_i64())
-                        .map(|s| s as i32);
-
-                    matches.push(DatabaseEntry {
-                        hfr,
-                        detected_stars,
-                        grading_status: image.grading_status,
-                        project_name,
-                        target_name,
-                    });
-                }
-            }
-        }
-    }
-
-    Ok(matches)
-}
-
-fn find_fits_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
-    let entries = std::fs::read_dir(dir)?;
-
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.is_dir() {
-            find_fits_files(&path, files)?;
-        } else if is_fits_file(&path) {
-            files.push(path);
-        }
-    }
-
-    Ok(())
-}
-
-fn is_fits_file(path: &Path) -> bool {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| {
-            let ext_lower = ext.to_lowercase();
-            ext_lower == "fits" || ext_lower == "fit" || ext_lower == "fts"
-        })
-        .unwrap_or(false)
-}
-
-fn output_table_comparison(
-    computed: &ComputedStats,
-    db_entries: &[DatabaseEntry],
-    filename: &str,
-) -> Result<()> {
-    println!("\nComputed Statistics:");
-    println!("  Dimensions: {}x{}", computed.width, computed.height);
-    println!("  Mean: {:.3}", computed.mean);
-    println!("  Median: {:.3}", computed.median);
-    println!("  Std Dev: {:.3}", computed.std_dev);
-    println!("  Min: {:.3}", computed.min);
-    println!("  Max: {:.3}", computed.max);
-
-    if let Some(hfr) = computed.hfr {
-        println!("  HFR: {:.3}", hfr);
-    } else {
-        println!("  HFR: Not computed (no stars found)");
-    }
-
-    if let Some(star_count) = computed.star_count {
-        println!("  Stars: {}", star_count);
-    } else {
-        println!("  Stars: 0");
-    }
-
-    if !db_entries.is_empty() {
-        println!("\nDatabase Comparison:");
-        for (i, entry) in db_entries.iter().enumerate() {
-            if db_entries.len() > 1 {
-                println!("  Match {}:", i + 1);
-            }
-            println!("  Project: {}", entry.project_name);
-            println!("  Target: {}", entry.target_name);
-            println!(
-                "  Status: {}",
-                match entry.grading_status {
-                    0 => "Pending",
-                    1 => "Accepted",
-                    2 => "Rejected",
-                    _ => "Unknown",
-                }
-            );
-
-            if let Some(db_hfr) = entry.hfr {
-                if let Some(computed_hfr) = computed.hfr {
-                    println!(
-                        "  HFR: {:.3} (computed) vs {:.3} (database) = {:.3} difference",
-                        computed_hfr,
-                        db_hfr,
-                        computed_hfr - db_hfr
-                    );
-                } else {
-                    println!("  HFR: Not computed vs {:.3} (database)", db_hfr);
-                }
-            } else {
-                println!("  HFR: Not in database");
-            }
-
-            if let Some(db_stars) = entry.detected_stars {
-                if let Some(computed_stars) = computed.star_count {
-                    println!(
-                        "  Stars: {} (computed) vs {} (database) = {} difference",
-                        computed_stars,
-                        db_stars,
-                        computed_stars as i32 - db_stars
-                    );
-                } else {
-                    println!("  Stars: 0 (computed) vs {} (database)", db_stars);
-                }
-            } else {
-                println!("  Stars: Not in database");
-            }
-        }
-    } else {
-        println!("\nDatabase: No matching entry found for {}", filename);
-    }
-
-    Ok(())
-}
-
-fn output_json_comparison(
-    computed: &ComputedStats,
-    db_entries: &[DatabaseEntry],
-    filename: &str,
-) -> Result<()> {
-    let result = AnalysisResult {
-        filename: filename.to_string(),
-        computed_stats: computed.clone(),
-        database_hfr: db_entries.first().and_then(|e| e.hfr),
-        database_stars: db_entries.first().and_then(|e| e.detected_stars),
-        database_status: db_entries.first().map(|e| match e.grading_status {
-            0 => "Pending".to_string(),
-            1 => "Accepted".to_string(),
-            2 => "Rejected".to_string(),
-            _ => "Unknown".to_string(),
-        }),
-        database_project: db_entries.first().map(|e| e.project_name.clone()),
-        database_target: db_entries.first().map(|e| e.target_name.clone()),
-        hfr_difference: if let (Some(computed_hfr), Some(db_entry)) =
-            (computed.hfr, db_entries.first())
-        {
-            db_entry.hfr.map(|db_hfr| computed_hfr - db_hfr)
-        } else {
-            None
-        },
-        star_difference: if let (Some(computed_stars), Some(db_entry)) =
-            (computed.star_count, db_entries.first())
-        {
-            db_entry
-                .detected_stars
-                .map(|db_stars| computed_stars as i32 - db_stars)
-        } else {
-            None
-        },
-        found_in_database: !db_entries.is_empty(),
-    };
-
-    println!("{}", serde_json::to_string_pretty(&result)?);
-    Ok(())
-}
-
-fn output_csv_comparison(
-    computed: &ComputedStats,
-    db_entries: &[DatabaseEntry],
-    filename: &str,
-) -> Result<()> {
-    println!("filename,computed_hfr,computed_stars,computed_mean,computed_median,computed_stddev,db_hfr,db_stars,db_status,project,target,hfr_diff,star_diff");
-
-    let result = AnalysisResult {
-        filename: filename.to_string(),
-        computed_stats: computed.clone(),
-        database_hfr: db_entries.first().and_then(|e| e.hfr),
-        database_stars: db_entries.first().and_then(|e| e.detected_stars),
-        database_status: db_entries.first().map(|e| match e.grading_status {
-            0 => "Pending".to_string(),
-            1 => "Accepted".to_string(),
-            2 => "Rejected".to_string(),
-            _ => "Unknown".to_string(),
-        }),
-        database_project: db_entries.first().map(|e| e.project_name.clone()),
-        database_target: db_entries.first().map(|e| e.target_name.clone()),
-        hfr_difference: if let (Some(computed_hfr), Some(db_entry)) =
-            (computed.hfr, db_entries.first())
-        {
-            db_entry.hfr.map(|db_hfr| computed_hfr - db_hfr)
-        } else {
-            None
-        },
-        star_difference: if let (Some(computed_stars), Some(db_entry)) =
-            (computed.star_count, db_entries.first())
-        {
-            db_entry
-                .detected_stars
-                .map(|db_stars| computed_stars as i32 - db_stars)
-        } else {
-            None
-        },
-        found_in_database: !db_entries.is_empty(),
-    };
-
-    output_csv_result(&result)?;
-    Ok(())
-}
-
-fn output_csv_result(result: &AnalysisResult) -> Result<()> {
-    println!(
-        "{},{},{},{:.3},{:.3},{:.3},{},{},{},{},{},{},{}",
-        escape_csv(&result.filename),
-        result
-            .computed_stats
-            .hfr
-            .map(|h| format!("{:.3}", h))
-            .unwrap_or_default(),
-        result.computed_stats.star_count.unwrap_or(0),
-        result.computed_stats.mean,
-        result.computed_stats.median,
-        result.computed_stats.std_dev,
-        result
-            .database_hfr
-            .map(|h| format!("{:.3}", h))
-            .unwrap_or_default(),
-        result
-            .database_stars
-            .map(|s| s.to_string())
-            .unwrap_or_default(),
-        escape_csv(result.database_status.as_ref().unwrap_or(&String::new())),
-        escape_csv(result.database_project.as_ref().unwrap_or(&String::new())),
-        escape_csv(result.database_target.as_ref().unwrap_or(&String::new())),
-        result
-            .hfr_difference
-            .map(|d| format!("{:.3}", d))
-            .unwrap_or_default(),
-        result
-            .star_difference
-            .map(|d| d.to_string())
-            .unwrap_or_default()
-    );
-    Ok(())
-}
-
-fn escape_csv(value: &str) -> String {
-    if value.contains(',') || value.contains('"') || value.contains('\n') {
-        format!("\"{}\"", value.replace('"', "\"\""))
-    } else {
-        value.to_string()
-    }
-}
-
-fn truncate_string(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max_len - 3])
-    }
-}
-
-fn perform_star_detection(
-    image: &FitsImage,
-    stats: &mut ComputedStats,
-    detector: &str,
-    sensitivity: &str,
-    apply_stretch: bool,
-) -> Result<()> {
     println!("\nStar Detection:");
     println!("  Algorithm: {}", detector);
     println!("  Sensitivity: {}", sensitivity);
@@ -646,108 +455,180 @@ fn perform_star_detection(
                 use_roi: false,
             };
 
-            let detection_data = {
-                // Apply MTF stretching
-                let basic_stats = image.calculate_basic_statistics();
-                let stretch_params = StretchParameters::default();
-                stretch_image(
-                    &image.data,
-                    &basic_stats,
-                    stretch_params.factor,
-                    stretch_params.black_clipping,
-                )
-            };
-
-            let result = detect_stars_with_original(
-                &detection_data,
-                &image.data,
-                image.width,
-                image.height,
-                &params,
-            );
-
-            println!("  Detected stars: {}", result.star_list.len());
-            println!("  Average HFR: {:.3}", result.average_hfr);
-            println!("  HFR StdDev: {:.3}", result.hfr_std_dev);
-
-            // Update stats with detection results
-            stats.star_count = Some(result.star_list.len());
-            stats.hfr = Some(result.average_hfr);
-
-            // Show first few stars if any detected
-            if !result.star_list.is_empty() && result.star_list.len() <= 5 {
-                println!("\n  Star positions:");
-                for (i, star) in result.star_list.iter().enumerate() {
-                    println!(
-                        "    #{}: ({:.1}, {:.1}) HFR: {:.2}",
-                        i + 1,
-                        star.position.0,
-                        star.position.1,
-                        star.hfr
-                    );
-                }
-            } else if result.star_list.len() > 5 {
-                println!("\n  First 5 star positions:");
-                for (i, star) in result.star_list.iter().take(5).enumerate() {
-                    println!(
-                        "    #{}: ({:.1}, {:.1}) HFR: {:.2}",
-                        i + 1,
-                        star.position.0,
-                        star.position.1,
-                        star.hfr
-                    );
-                }
-            }
+            // NINA always uses MTF stretch
+            let stretch_params = StretchParameters::default();
+            let stretched = stretch_image(&fits.data, computed_stats, stretch_params.factor, stretch_params.black_clipping);
+            
+            let result = detect_stars_with_original(&stretched, &fits.data, fits.width, fits.height, &params);
+            
+            detection_info = format!("NINA {} sensitivity", sensitivity);
+            
+            Ok((result.star_list.len(), result.average_hfr, result.hfr_std_dev, detection_info))
         }
         "hocusfocus" => {
-            let params = HocusFocusParams::default();
+            println!("  OpenCV Morphology: {}", use_opencv_morphology);
+            println!("  OpenCV Wavelets: {}", use_opencv_wavelets);
 
-            let result = detect_stars_hocus_focus(&image.data, image.width, image.height, &params);
+            let mut params = HocusFocusParams::default();
+            params.use_opencv_morphology = use_opencv_morphology;
+            params.use_opencv_wavelets = use_opencv_wavelets;
 
-            println!("  Detected stars: {}", result.stars.len());
-            println!("  Average HFR: {:.3}", result.average_hfr);
-            println!("  Average FWHM: {:.3}", result.average_fwhm);
-            println!("  Noise Sigma: {:.1}", result.noise_sigma);
-            println!("  Background: {:.1}", result.background_mean);
+            let detection_data = if apply_stretch {
+                let stretch_params = StretchParameters::default();
+                stretch_image(&fits.data, computed_stats, stretch_params.factor, stretch_params.black_clipping)
+            } else {
+                fits.data.clone()
+            };
 
-            // Update stats with detection results
-            stats.star_count = Some(result.stars.len());
-            stats.hfr = Some(result.average_hfr);
+            let result = detect_stars_hocus_focus(&detection_data, fits.width, fits.height, &params);
+            
+            let mut info_parts = vec!["HocusFocus"];
+            if use_opencv_morphology { info_parts.push("OpenCV-Morph"); }
+            if use_opencv_wavelets { info_parts.push("OpenCV-Wave"); }
+            if !use_opencv_morphology && !use_opencv_wavelets { info_parts.push("PureRust"); }
+            detection_info = info_parts.join(" ");
 
-            // Show first few stars if any detected
-            if !result.stars.is_empty() && result.stars.len() <= 5 {
-                println!("\n  Star positions:");
-                for (i, star) in result.stars.iter().enumerate() {
-                    println!(
-                        "    #{}: ({:.1}, {:.1}) HFR: {:.2}, SNR: {:.1}",
-                        i + 1,
-                        star.position.0,
-                        star.position.1,
-                        star.hfr,
-                        star.snr
-                    );
-                }
-            } else if result.stars.len() > 5 {
-                println!("\n  First 5 star positions:");
-                for (i, star) in result.stars.iter().take(5).enumerate() {
-                    println!(
-                        "    #{}: ({:.1}, {:.1}) HFR: {:.2}, SNR: {:.1}",
-                        i + 1,
-                        star.position.0,
-                        star.position.1,
-                        star.hfr,
-                        star.snr
-                    );
+            if result.stars.is_empty() {
+                Ok((0, 0.0, 0.0, detection_info))
+            } else {
+                // Calculate statistics
+                let hfr_values: Vec<f64> = result.stars.iter().map(|s| s.hfr).collect();
+                let avg_hfr = hfr_values.iter().sum::<f64>() / hfr_values.len() as f64;
+                let variance = hfr_values.iter()
+                    .map(|&hfr| (hfr - avg_hfr).powi(2))
+                    .sum::<f64>() / hfr_values.len() as f64;
+                let std_dev = variance.sqrt();
+                
+                Ok((result.stars.len(), avg_hfr, std_dev, detection_info))
+            }
+        }
+        _ => Err(anyhow::anyhow!("Unknown detector: {}", detector))
+    }
+}
+
+fn get_database_info(conn: &Connection, filename: &str) -> Result<Option<(i32, f64)>> {
+    // Simple query to find images by filename pattern
+    let query = "SELECT metadata FROM acquiredimage WHERE metadata LIKE ?";
+    let pattern = format!("%{}%", filename);
+    
+    let mut stmt = conn.prepare(query)?;
+    let mut rows = stmt.query([&pattern])?;
+    
+    while let Some(row) = rows.next()? {
+        let metadata_json: String = row.get(0)?;
+        
+        // Try to parse the metadata
+        if let Ok(metadata) = serde_json::from_str::<ImageMetadata>(&metadata_json) {
+            // Check if filename matches
+            if let Some(meta_filename) = metadata.filename {
+                if meta_filename.contains(filename) || filename.contains(&meta_filename) {
+                    if let (Some(stars), Some(hfr)) = (metadata.detected_stars, metadata.hfr) {
+                        return Ok(Some((stars, hfr)));
+                    }
                 }
             }
         }
-        _ => {
-            return Err(anyhow::anyhow!(
-                "Unknown detector: {}. Valid options are: nina, hocusfocus",
-                detector
-            ));
-        }
     }
+    
+    Ok(None)
+}
 
-    Ok(())
+fn output_table(
+    filename: &str,
+    computed_stats: &ComputedStats,
+    star_count: usize,
+    avg_hfr: f64,
+    hfr_std: f64,
+    db_info: Option<(i32, f64)>,
+    detection_info: &str,
+) {
+    println!("\n=== FITS Analysis Results ===");
+    println!("File: {}", filename);
+    println!("\nImage Statistics:");
+    println!("  Min: {}", computed_stats.min);
+    println!("  Max: {}", computed_stats.max);
+    println!("  Mean: {:.2}", computed_stats.mean);
+    println!("  Median: {:.2}", computed_stats.median);
+    println!("  MAD: {:.2}", computed_stats.mad.unwrap_or(0.0));
+
+    println!("\nDetection Results ({}):", detection_info);
+    println!("  Detected Stars: {}", star_count);
+    println!("  Average HFR: {:.3}", avg_hfr);
+    println!("  HFR Std Dev: {:.3}", hfr_std);
+
+    if let Some((nina_stars, nina_hfr)) = db_info {
+        println!("\nDatabase Comparison:");
+        println!("  N.I.N.A. Stars: {}", nina_stars);
+        println!("  N.I.N.A. HFR: {:.3}", nina_hfr);
+        
+        let star_diff = (star_count as f64 - nina_stars as f64) / nina_stars as f64 * 100.0;
+        let hfr_diff = (avg_hfr - nina_hfr) / nina_hfr * 100.0;
+        
+        println!("  Star Count Difference: {:.1}%", star_diff);
+        println!("  HFR Difference: {:.1}%", hfr_diff);
+    } else {
+        println!("\nNo matching database entry found");
+    }
+}
+
+fn output_json(
+    computed_stats: &ComputedStats,
+    star_count: usize,
+    avg_hfr: f64,
+    hfr_std: f64,
+    db_info: Option<(i32, f64)>,
+    detection_info: &str,
+    filename: &str,
+) {
+    let result = serde_json::json!({
+        "file": filename,
+        "computed": {
+            "statistics": {
+                "min": computed_stats.min,
+                "max": computed_stats.max,
+                "mean": computed_stats.mean,
+                "median": computed_stats.median,
+                "mad": computed_stats.mad.unwrap_or(0.0),
+            },
+            "detection": {
+                "algorithm": detection_info,
+                "stars": star_count,
+                "average_hfr": avg_hfr,
+                "hfr_std_dev": hfr_std,
+            }
+        },
+        "database": db_info.map(|(stars, hfr)| {
+            serde_json::json!({
+                "stars": stars,
+                "hfr": hfr,
+            })
+        }),
+    });
+
+    println!("{}", serde_json::to_string_pretty(&result).unwrap());
+}
+
+fn output_csv(
+    filename: &str,
+    computed_stats: &ComputedStats,
+    star_count: usize,
+    avg_hfr: f64,
+    hfr_std: f64,
+    db_info: Option<(i32, f64)>,
+) {
+    let (db_stars, db_hfr) = db_info.unwrap_or((0, 0.0));
+
+    println!("{},{},{},{:.2},{:.2},{:.2},{},{:.3},{:.3},{},{:.3}",
+        filename,
+        computed_stats.min,
+        computed_stats.max,
+        computed_stats.mean,
+        computed_stats.median,
+        computed_stats.mad.unwrap_or(0.0),
+        star_count,
+        avg_hfr,
+        hfr_std,
+        db_stars,
+        db_hfr
+    );
 }
