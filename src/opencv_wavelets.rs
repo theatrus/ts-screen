@@ -145,7 +145,7 @@ impl WaveletStructureRemover {
                     let mut weight = 0.0;
 
                     for i in 0..5 {
-                        let sx = x as i32 + offsets[i] * scale as i32;
+                        let sx = x as i32 + offsets[i] * scale;
                         if sx >= 0 && sx < width as i32 {
                             sum += residual[y * width + sx as usize] * coeffs[i];
                             weight += coeffs[i];
@@ -163,7 +163,7 @@ impl WaveletStructureRemover {
                     let mut weight = 0.0;
 
                     for i in 0..5 {
-                        let sy = y as i32 + offsets[i] * scale as i32;
+                        let sy = y as i32 + offsets[i] * scale;
                         if sy >= 0 && sy < height as i32 {
                             sum += temp[sy as usize * width + x] * coeffs[i];
                             weight += coeffs[i];

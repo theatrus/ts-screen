@@ -30,7 +30,9 @@ mod tests {
     struct SyntheticStar {
         pub x: f64,
         pub y: f64,
+        #[allow(dead_code)]
         pub radius: f64,
+        #[allow(dead_code)]
         pub peak_brightness: u16,
         pub fwhm: f64, // Full Width Half Maximum
     }
@@ -77,7 +79,7 @@ mod tests {
             // Fill with background + noise
             for pixel in data.iter_mut() {
                 let noise = (rng.gen::<f64>() - 0.5) * noise_level as f64;
-                *pixel = (background as f64 + noise).max(0.0).min(65535.0) as u16;
+                *pixel = (background as f64 + noise).clamp(0.0, 65535.0) as u16;
             }
 
             SyntheticImage {
@@ -351,7 +353,7 @@ mod tests {
 
         println!("Close stars test - Detected: {}", result.star_list.len());
         assert!(
-            result.star_list.len() >= 1,
+            !result.star_list.is_empty(),
             "Should detect at least one star"
         );
 
@@ -388,7 +390,7 @@ mod tests {
             result.star_list.len()
         );
         assert!(
-            result.star_list.len() >= 1,
+            !result.star_list.is_empty(),
             "Should detect at least the center star"
         );
         assert!(

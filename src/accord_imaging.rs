@@ -185,13 +185,14 @@ pub struct Rectangle {
 }
 
 /// Blob counter for connected component labeling
+#[derive(Default)]
 pub struct BlobCounter {
     blobs: Vec<Blob>,
 }
 
 impl BlobCounter {
     pub fn new() -> Self {
-        Self { blobs: Vec::new() }
+        Self::default()
     }
 
     pub fn process_image(&mut self, image: &[u8], width: usize, height: usize) {
@@ -347,6 +348,12 @@ impl SimpleShapeChecker {
 /// Fast Gaussian blur implementation
 pub struct FastGaussianBlur;
 
+impl Default for FastGaussianBlur {
+    fn default() -> Self {
+        Self
+    }
+}
+
 impl FastGaussianBlur {
     pub fn new() -> Self {
         Self
@@ -413,10 +420,10 @@ fn create_gaussian_kernel(size: usize, sigma: f64) -> Vec<f64> {
     let center = size as f64 / 2.0 - 0.5;
     let mut sum = 0.0;
 
-    for i in 0..size {
+    for (i, k) in kernel.iter_mut().enumerate() {
         let x = i as f64 - center;
-        kernel[i] = (-x * x / (2.0 * sigma * sigma)).exp();
-        sum += kernel[i];
+        *k = (-x * x / (2.0 * sigma * sigma)).exp();
+        sum += *k;
     }
 
     // Normalize
@@ -524,7 +531,7 @@ fn non_maximum_suppression(
             let angle_deg = angle.to_degrees().abs();
 
             // Determine direction
-            let (dx1, dy1, dx2, dy2) = if angle_deg < 22.5 || angle_deg >= 157.5 {
+            let (dx1, dy1, dx2, dy2) = if !(22.5..157.5).contains(&angle_deg) {
                 // Horizontal edge
                 (-1, 0, 1, 0)
             } else if angle_deg < 67.5 {
@@ -664,12 +671,12 @@ mod tests {
         dilation.apply_in_place(&mut image, 5, 5);
 
         // Original pixel at row 1, col 2 - Check that dilation expanded to 3x3 region
-        assert_eq!(image[0 * 5 + 1], 255); // top-left
-        assert_eq!(image[0 * 5 + 2], 255); // top
-        assert_eq!(image[0 * 5 + 3], 255); // top-right
-        assert_eq!(image[1 * 5 + 1], 255); // left
-        assert_eq!(image[1 * 5 + 2], 255); // center (original)
-        assert_eq!(image[1 * 5 + 3], 255); // right
+        assert_eq!(image[1], 255); // top-left
+        assert_eq!(image[2], 255); // top
+        assert_eq!(image[3], 255); // top-right
+        assert_eq!(image[6], 255); // left
+        assert_eq!(image[7], 255); // center (original)
+        assert_eq!(image[8], 255); // right
         assert_eq!(image[2 * 5 + 1], 255); // bottom-left
         assert_eq!(image[2 * 5 + 2], 255); // bottom
         assert_eq!(image[2 * 5 + 3], 255); // bottom-right

@@ -4,7 +4,6 @@ use anyhow::Result;
 #[cfg(feature = "opencv")]
 use opencv::imgproc::morphology_default_border_value;
 #[cfg(feature = "opencv")]
-#[cfg(feature = "opencv")]
 use opencv::{core, imgproc};
 
 /// Advanced morphological operations using OpenCV

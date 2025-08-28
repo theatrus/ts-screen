@@ -810,6 +810,7 @@ fn measure_star_properties(
 }
 
 /// Validate star based on HocusFocus criteria
+#[allow(clippy::too_many_arguments)]
 fn validate_star(
     candidate: &StarCandidate,
     peak: f64,

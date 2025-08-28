@@ -46,8 +46,10 @@ impl Default for StatisticalGradingConfig {
 #[derive(Debug, Deserialize)]
 struct ImageMetadata {
     #[serde(rename = "FileName")]
+    #[allow(dead_code)]
     filename: String,
     #[serde(rename = "FilterName")]
+    #[allow(dead_code)]
     filter_name: String,
     #[serde(rename = "HFR")]
     hfr: Option<f64>,

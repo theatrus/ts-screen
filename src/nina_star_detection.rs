@@ -18,7 +18,7 @@ fn round_half_to_even(x: f64) -> f64 {
     let truncated = x.trunc();
     let fraction = x - truncated;
 
-    if fraction > 0.5 || fraction < -0.5 {
+    if !(-0.5..=0.5).contains(&fraction) {
         x.round()
     } else if fraction == 0.5 {
         if truncated % 2.0 == 0.0 {
@@ -694,20 +694,23 @@ fn analyze_star_pixels(
     // Count bright pixels
     for y in star.rectangle.y..(star.rectangle.y + star.rectangle.height) {
         for x in star.rectangle.x..(star.rectangle.x + star.rectangle.width) {
-            if x >= 0 && y >= 0 && (x as usize) < state.width && (y as usize) < state.height {
-                if inside_circle(
+            if x >= 0
+                && y >= 0
+                && (x as usize) < state.width
+                && (y as usize) < state.height
+                && inside_circle(
                     x as f64,
                     y as f64,
                     star.position.0,
                     star.position.1,
                     star.radius,
-                ) {
-                    // Use detection_data (stretched) for brightness check
-                    let pixel_value =
-                        state.detection_data[(y as usize) * state.width + (x as usize)] as f64;
-                    if pixel_value > bright_pixel_threshold {
-                        inner_star_bright_pixels += 1;
-                    }
+                )
+            {
+                // Use detection_data (stretched) for brightness check
+                let pixel_value =
+                    state.detection_data[(y as usize) * state.width + (x as usize)] as f64;
+                if pixel_value > bright_pixel_threshold {
+                    inner_star_bright_pixels += 1;
                 }
             }
         }

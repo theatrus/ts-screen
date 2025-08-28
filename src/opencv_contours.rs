@@ -3,7 +3,6 @@ use crate::accord_imaging::{Blob, Rectangle};
 use crate::opencv_utils::*;
 use anyhow::Result;
 #[cfg(feature = "opencv")]
-#[cfg(feature = "opencv")]
 use opencv::{core, imgproc};
 
 /// Advanced star contour analysis using OpenCV

@@ -103,7 +103,7 @@ fn read_fits_directory(dir: &Path, verbose: bool, format: &str) -> Result<()> {
 
             for (index, metadata) in successful_metadata.iter().enumerate() {
                 println!("File {}/{}:", index + 1, fits_files.len());
-                let formatted = format_fits_metadata(&metadata, verbose);
+                let formatted = format_fits_metadata(metadata, verbose);
                 println!("{}", formatted);
 
                 // Add separator between files if not last

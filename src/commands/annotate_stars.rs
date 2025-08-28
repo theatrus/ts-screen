@@ -29,6 +29,7 @@ fn parse_color(color_name: &str) -> Rgb<u8> {
 }
 
 /// Create an annotated image with detected stars marked
+#[allow(clippy::too_many_arguments)]
 pub fn annotate_stars(
     fits_path: &str,
     output: Option<String>,

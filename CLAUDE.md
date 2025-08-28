@@ -4,6 +4,17 @@
 
 PSF Guard (Point Spread Function Guard) is a Rust CLI utility designed to analyze N.I.N.A. Target Scheduler plugin databases and manage rejected astronomical image files. The project was developed to help organize FITS files based on their grading status in the N.I.N.A. Target Scheduler database. It now also includes a full implementation of N.I.N.A.'s star detection algorithm for HFR (Half Flux Radius) calculations.
 
+## Code Quality Guidelines
+
+**IMPORTANT**: Before committing any code changes:
+
+1. **Format all code**: Run `cargo fmt` to ensure consistent code formatting
+2. **Fix all clippy warnings**: Run `cargo clippy` and address all warnings
+3. **Run tests**: Ensure all tests pass with `cargo test`
+4. **Check with features**: Test compilation with `cargo check --features opencv`
+
+These steps help maintain code quality and prevent CI failures.
+
 ## Key Implementation Details
 
 ### Architecture
@@ -416,3 +427,119 @@ println!("Detected {} stars with average HFR {:.3}", result.detected_stars, resu
    - Implemented banker's rounding to match .NET
 
 This implementation demonstrates deep integration with astronomical image processing pipelines and careful attention to numerical accuracy.
+
+## OpenCV Integration (2025-08-28)
+
+### Overview
+
+Added optional OpenCV support to enhance star detection capabilities with professional computer vision algorithms. OpenCV operations are attempted first with automatic fallback to pure Rust implementations, ensuring the code works both with and without the OpenCV feature.
+
+### Implementation Details
+
+#### OpenCV Wrappers Created
+
+1. **opencv_canny.rs** - Canny edge detection wrappers
+   - `OpenCVCanny`: Canny edge detection with and without Gaussian blur
+   - `OpenCVThreshold`: SIS thresholding using Otsu's method
+   - `OpenCVBinaryMorphology`: Binary dilation operations
+   - `OpenCVNoiseReduction`: Gaussian and median blur filters
+
+2. **opencv_contours.rs** - Advanced blob detection
+   - `OpenCVBlobDetector`: Contour-based star detection with quality assessment
+   - Shape analysis and eccentricity calculations
+   - Better handling of overlapping stars
+
+3. **opencv_morphology.rs** - Morphological operations
+   - Elliptical and rectangular structuring elements
+   - Erosion and dilation with edge preservation
+   - Better star/noise separation
+
+4. **opencv_wavelets.rs** - Structure removal
+   - Wavelet decomposition for nebula removal
+   - Edge-preserving filters for better star preservation
+   - Domain transform filters for large-scale structures
+
+#### Integration Strategy
+
+1. **Automatic Fallback Pattern**:
+   ```rust
+   match OpenCVOperation::apply(data) {
+       Ok(result) => use_opencv_result(result),
+       Err(e) => {
+           eprintln!("OpenCV operation failed: {}, using fallback", e);
+           use_fallback_implementation(data)
+       }
+   }
+   ```
+
+2. **Unified API**: All OpenCV wrappers follow consistent patterns:
+   - Use `create_mat_from_u8/u16` for Mat creation
+   - Return `Result<Vec<u8>, Box<dyn Error>>` for error handling
+   - Provide both feature-gated implementations
+
+3. **Feature Flag**: OpenCV is optional via `--features opencv`
+
+### Building with OpenCV
+
+#### Prerequisites
+
+Follow the [opencv-rust installation guide](https://github.com/twistedfall/opencv-rust/blob/master/INSTALL.md):
+
+**Linux/macOS**:
+```bash
+# Ubuntu/Debian
+sudo apt-get install libopencv-dev clang
+
+# macOS
+brew install opencv
+
+# Set environment variables if needed
+export OPENCV_LINK_LIBS=opencv_world
+export OPENCV_LINK_PATHS=/usr/local/lib
+```
+
+**Windows**:
+Use vcpkg for easiest setup:
+```powershell
+vcpkg install opencv4[contrib,nonfree]:x64-windows
+set VCPKG_ROOT=C:\vcpkg
+set OPENCV_LINK_LIBS=opencv_world
+```
+
+#### Building
+
+```bash
+# Build with OpenCV support
+cargo build --features opencv
+
+# Build without OpenCV (pure Rust fallbacks)
+cargo build
+
+# Run tests with OpenCV
+cargo test --features opencv
+```
+
+### Benefits of OpenCV Integration
+
+1. **Better Edge Detection**: OpenCV's Canny implementation is highly optimized
+2. **Advanced Morphology**: Better star/noise separation with elliptical kernels
+3. **Professional Filters**: Domain transform and edge-preserving filters
+4. **Contour Analysis**: More accurate star boundary detection
+5. **Performance**: SIMD-optimized operations on supported platforms
+
+### Detector Comparison
+
+The `analyze-fits` command now supports `--compare-all` to test different detector configurations:
+
+```bash
+psf-guard analyze-fits image.fits --compare-all
+
+=== Detector Comparison Results ===
+Detector                       |    Stars |    Avg HFR | HFR StdDev
+NINA-normal                    |       85 |      2.834 |      0.412
+NINA-high                      |      112 |      2.756 |      0.523
+NINA-highest                   |      128 |      2.691 |      0.634
+HocusFocus                     |       93 |      2.812 |      0.387
+```
+
+HocusFocus always attempts OpenCV operations first with automatic fallback to pure Rust implementations if OpenCV fails.

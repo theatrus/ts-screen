@@ -26,6 +26,7 @@ struct DetectorConfig {
     sensitivity: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn analyze_fits_and_compare(
     conn: &Connection,
     fits_path: &str,

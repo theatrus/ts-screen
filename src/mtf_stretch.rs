@@ -90,6 +90,7 @@ fn get_stretch_map_with_bit_depth(
     };
 
     // Generate mapping for each possible pixel value
+    #[allow(clippy::needless_range_loop)]
     for i in 0..map.len() {
         let value = normalize_u16(i as u16, bit_depth);
         let input_value = 1.0 - highlights + value - shadows;
@@ -111,10 +112,10 @@ fn get_stretch_map_with_bit_depth(
 /// Calculate Median Absolute Deviation (MAD) from statistics
 fn calculate_mad(statistics: &ImageStatistics) -> f64 {
     // Use actual MAD if available, otherwise use approximation
-    statistics.mad.unwrap_or_else(|| {
+    statistics.mad.unwrap_or(
         // MAD ≈ 0.6745 * σ for normal distribution
-        statistics.std_dev * 0.6745
-    })
+        statistics.std_dev * 0.6745,
+    )
 }
 
 /// Normalize 16-bit value to 0-1 range considering bit depth
@@ -148,7 +149,7 @@ fn midtones_transfer_function(midtone_balance: f64, x: f64) -> f64 {
         }
         return 1.0;
     }
-    return 0.0;
+    0.0
 }
 
 /// Configuration for MTF stretching matching N.I.N.A. defaults
