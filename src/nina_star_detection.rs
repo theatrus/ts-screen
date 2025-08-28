@@ -3,6 +3,11 @@
 
 use crate::accord_imaging::*;
 
+/// Convert 16-bit data to 8-bit using NINA's exact method (right shift by 8)
+fn convert_16bpp_to_8bpp_nina(data: &[u16]) -> Vec<u8> {
+    data.iter().map(|&pixel| (pixel >> 8) as u8).collect()
+}
+
 /// Banker's rounding (round half to even) to match .NET's default Math.Round
 fn round_half_to_even(x: f64) -> f64 {
     let truncated = x.trunc();
@@ -151,8 +156,8 @@ pub fn detect_stars_with_original(
     eprintln!("Debug: Image {}x{}, resize_factor: {:.3}, min_star_size: {}, max_star_size: {}", 
               width, height, state.resize_factor, state.min_star_size, state.max_star_size);
     
-    // Step 2: Convert 16bpp to 8bpp for edge detection
-    let image_8bit = ImageUtility::convert_16bpp_to_8bpp(detection_data_16bit);
+    // Step 2: Convert 16bpp to 8bpp for edge detection using NINA's method (right shift by 8)
+    let image_8bit = convert_16bpp_to_8bpp_nina(detection_data_16bit);
     
     // Debug: Check 8-bit conversion
     let min_8bit = *image_8bit.iter().min().unwrap_or(&0);

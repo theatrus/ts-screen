@@ -561,12 +561,12 @@ impl FitsImage {
         
         // Use N.I.N.A. star detection with default parameters
         let mut params = StarDetectionParams::default();
-        params.sensitivity = StarSensitivity::High; // Back to High sensitivity for better detection
+        params.sensitivity = StarSensitivity::High; // Try High sensitivity
         
         // Use stretched data for detection but original raw data for HFR measurement
-        // This matches N.I.N.A.'s behavior
+        // This may be necessary since NINA's right-shift alone gives too few stars
         let result = detect_stars_with_original(
-            data,           // Detection data (stretched)
+            data,           // MTF stretched data for detection 
             &self.data,     // Original raw data for HFR calculation
             self.width, 
             self.height, 
