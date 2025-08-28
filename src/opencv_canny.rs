@@ -4,6 +4,8 @@ use std::error::Error;
 #[cfg(feature = "opencv")]
 use crate::opencv_utils::*;
 #[cfg(feature = "opencv")]
+use crate::opencv_gaussian_blur;
+#[cfg(feature = "opencv")]
 use opencv::{imgproc, prelude::*};
 
 /// OpenCV-based Canny edge detector
@@ -79,13 +81,13 @@ impl OpenCVCanny {
         // Apply Gaussian blur
         let mut blurred = Mat::default();
         let ksize = opencv::core::Size::new(blur_size, blur_size);
-        imgproc::gaussian_blur(
+        opencv_gaussian_blur!(
             &src,
             &mut blurred,
             ksize,
             sigma,
             sigma,
-            opencv::core::BORDER_DEFAULT,
+            opencv::core::BORDER_DEFAULT
         )?;
 
         // Apply Canny edge detection
@@ -179,13 +181,13 @@ impl OpenCVNoiseReduction {
         // Apply Gaussian blur
         let mut dst = Mat::default();
         let ksize = opencv::core::Size::new(0, 0); // Auto-calculate from sigma
-        imgproc::gaussian_blur(
+        opencv_gaussian_blur!(
             &src,
             &mut dst,
             ksize,
             sigma,
             sigma,
-            opencv::core::BORDER_DEFAULT,
+            opencv::core::BORDER_DEFAULT
         )?;
 
         // Convert result back to Vec<u8>

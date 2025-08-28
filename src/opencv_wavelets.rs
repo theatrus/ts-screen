@@ -1,5 +1,7 @@
 use anyhow::Result;
 #[cfg(feature = "opencv")]
+use crate::opencv_gaussian_blur;
+#[cfg(feature = "opencv")]
 use opencv::photo::{edge_preserving_filter, RECURS_FILTER};
 #[cfg(feature = "opencv")]
 use opencv::prelude::*;
@@ -75,13 +77,13 @@ impl WaveletStructureRemover {
             // For first few layers, use Gaussian blur with increasing sigma
             if layer < 3 {
                 let sigma = scale as f64 * 0.8; // Adaptive sigma
-                imgproc::gaussian_blur(
+                opencv_gaussian_blur!(
                     &residual,
                     &mut filtered,
                     core::Size::new(kernel_size, kernel_size),
                     sigma,
                     sigma,
-                    core::BORDER_REFLECT,
+                    core::BORDER_REFLECT
                 )?;
             } else {
                 // For larger scales, use domain transform for better structure preservation
