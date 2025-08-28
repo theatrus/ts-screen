@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use rusqlite::Connection;
 
+mod accord_imaging;
 mod cli;
 mod commands;
 mod db;
@@ -9,10 +10,9 @@ mod fits;
 mod grading;
 mod image_analysis;
 mod models;
-mod utils;
-mod accord_imaging;
-mod nina_star_detection;
 mod mtf_stretch;
+mod nina_star_detection;
+mod utils;
 
 use cli::{Cli, Commands};
 use commands::{
@@ -95,10 +95,22 @@ fn main() -> Result<()> {
             project,
             target,
             format,
+            detector,
+            sensitivity,
+            apply_stretch,
         } => {
             let conn = Connection::open(&cli.database)
                 .with_context(|| format!("Failed to open database: {}", cli.database))?;
-            analyze_fits_and_compare(&conn, &path, project, target, &format)?;
+            analyze_fits_and_compare(
+                &conn,
+                &path,
+                project,
+                target,
+                &format,
+                &detector,
+                &sensitivity,
+                apply_stretch,
+            )?;
         }
         Commands::StretchToPng {
             fits_path,
@@ -108,7 +120,14 @@ fn main() -> Result<()> {
             logarithmic,
             invert,
         } => {
-            stretch_to_png(&fits_path, output, midtone_factor, shadow_clipping, logarithmic, invert)?;
+            stretch_to_png(
+                &fits_path,
+                output,
+                midtone_factor,
+                shadow_clipping,
+                logarithmic,
+                invert,
+            )?;
         }
     }
 

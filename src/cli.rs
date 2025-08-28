@@ -143,6 +143,18 @@ pub enum Commands {
         /// Output format (table, json, csv)
         #[arg(short, long, default_value = "table")]
         format: String,
+
+        /// Star detection algorithm to use (nina, hocusfocus)
+        #[arg(long, default_value = "nina")]
+        detector: String,
+
+        /// Star detection sensitivity (normal, high, highest)
+        #[arg(long, default_value = "normal")]
+        sensitivity: String,
+
+        /// Apply MTF stretch before detection
+        #[arg(long)]
+        apply_stretch: bool,
     },
 
     /// Convert FITS to PNG with MTF stretch applied

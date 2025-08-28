@@ -1,6 +1,11 @@
 use crate::db::Database;
-use crate::image_analysis::{FitsImage, ImageStatistics as ComputedStats};
 use anyhow::{Context, Result};
+use psf_guard::hocus_focus_star_detection::{detect_stars_hocus_focus, HocusFocusParams};
+use psf_guard::image_analysis::{FitsImage, ImageStatistics as ComputedStats};
+use psf_guard::mtf_stretch::{stretch_image, StretchParameters};
+use psf_guard::nina_star_detection::{
+    detect_stars_with_original, NoiseReduction, StarDetectionParams, StarSensitivity,
+};
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 
@@ -10,14 +15,35 @@ pub fn analyze_fits_and_compare(
     project_filter: Option<String>,
     target_filter: Option<String>,
     format: &str,
+    detector: &str,
+    sensitivity: &str,
+    apply_stretch: bool,
 ) -> Result<()> {
     let db = Database::new(conn);
     let fits_path = Path::new(fits_path);
 
     if fits_path.is_file() {
-        analyze_single_fits(&db, fits_path, project_filter, target_filter, format)?;
+        analyze_single_fits(
+            &db,
+            fits_path,
+            project_filter,
+            target_filter,
+            format,
+            detector,
+            sensitivity,
+            apply_stretch,
+        )?;
     } else if fits_path.is_dir() {
-        analyze_fits_directory(&db, fits_path, project_filter, target_filter, format)?;
+        analyze_fits_directory(
+            &db,
+            fits_path,
+            project_filter,
+            target_filter,
+            format,
+            detector,
+            sensitivity,
+            apply_stretch,
+        )?;
     } else {
         return Err(anyhow::anyhow!(
             "Path does not exist or is not accessible: {}",
@@ -34,6 +60,9 @@ fn analyze_single_fits(
     project_filter: Option<String>,
     target_filter: Option<String>,
     format: &str,
+    detector: &str,
+    sensitivity: &str,
+    apply_stretch: bool,
 ) -> Result<()> {
     let filename = fits_path
         .file_name()
@@ -46,7 +75,16 @@ fn analyze_single_fits(
     let image = FitsImage::from_file(fits_path)
         .with_context(|| format!("Failed to load FITS image: {}", fits_path.display()))?;
 
-    let computed_stats = image.calculate_statistics();
+    let mut computed_stats = image.calculate_statistics();
+
+    // Perform star detection
+    perform_star_detection(
+        &image,
+        &mut computed_stats,
+        detector,
+        sensitivity,
+        apply_stretch,
+    )?;
 
     // Try to find corresponding database entry
     let db_entries = find_database_entry(db, filename, project_filter, target_filter)?;
@@ -66,6 +104,9 @@ fn analyze_fits_directory(
     project_filter: Option<String>,
     target_filter: Option<String>,
     format: &str,
+    detector: &str,
+    sensitivity: &str,
+    apply_stretch: bool,
 ) -> Result<()> {
     let mut fits_files = Vec::new();
     find_fits_files(fits_dir, &mut fits_files)?;
@@ -101,7 +142,16 @@ fn analyze_fits_directory(
             .and_then(|n| n.to_str())
             .unwrap_or("unknown");
 
-        match analyze_fits_file(db, fits_path, filename, &project_filter, &target_filter) {
+        match analyze_fits_file(
+            db,
+            fits_path,
+            filename,
+            &project_filter,
+            &target_filter,
+            detector,
+            sensitivity,
+            apply_stretch,
+        ) {
             Ok(result) => {
                 processed_count += 1;
 
@@ -191,10 +241,22 @@ fn analyze_fits_file(
     filename: &str,
     project_filter: &Option<String>,
     target_filter: &Option<String>,
+    detector: &str,
+    sensitivity: &str,
+    apply_stretch: bool,
 ) -> Result<AnalysisResult> {
     // Load and analyze the FITS image
     let image = FitsImage::from_file(fits_path)?;
-    let computed_stats = image.calculate_statistics();
+    let mut computed_stats = image.calculate_statistics();
+
+    // Perform star detection
+    perform_star_detection(
+        &image,
+        &mut computed_stats,
+        detector,
+        sensitivity,
+        apply_stretch,
+    )?;
 
     // Try to find corresponding database entry
     let db_entries =
@@ -553,4 +615,139 @@ fn truncate_string(s: &str, max_len: usize) -> String {
     } else {
         format!("{}...", &s[..max_len - 3])
     }
+}
+
+fn perform_star_detection(
+    image: &FitsImage,
+    stats: &mut ComputedStats,
+    detector: &str,
+    sensitivity: &str,
+    apply_stretch: bool,
+) -> Result<()> {
+    println!("\nStar Detection:");
+    println!("  Algorithm: {}", detector);
+    println!("  Sensitivity: {}", sensitivity);
+    println!("  Apply MTF Stretch: {}", apply_stretch);
+
+    match detector.to_lowercase().as_str() {
+        "nina" => {
+            // Parse sensitivity
+            let star_sensitivity = match sensitivity.to_lowercase().as_str() {
+                "high" => StarSensitivity::High,
+                "highest" => StarSensitivity::Highest,
+                _ => StarSensitivity::Normal,
+            };
+
+            let params = StarDetectionParams {
+                sensitivity: star_sensitivity,
+                noise_reduction: NoiseReduction::None,
+                use_roi: false,
+            };
+
+            let detection_data = if apply_stretch {
+                // Apply MTF stretching
+                let basic_stats = image.calculate_basic_statistics();
+                let stretch_params = StretchParameters::default();
+                stretch_image(
+                    &image.data,
+                    &basic_stats,
+                    stretch_params.factor,
+                    stretch_params.black_clipping,
+                )
+            } else {
+                image.data.clone()
+            };
+
+            let result = detect_stars_with_original(
+                &detection_data,
+                &image.data,
+                image.width,
+                image.height,
+                &params,
+            );
+
+            println!("  Detected stars: {}", result.star_list.len());
+            println!("  Average HFR: {:.3}", result.average_hfr);
+            println!("  HFR StdDev: {:.3}", result.hfr_std_dev);
+
+            // Update stats with detection results
+            stats.star_count = Some(result.star_list.len());
+            stats.hfr = Some(result.average_hfr);
+
+            // Show first few stars if any detected
+            if !result.star_list.is_empty() && result.star_list.len() <= 5 {
+                println!("\n  Star positions:");
+                for (i, star) in result.star_list.iter().enumerate() {
+                    println!(
+                        "    #{}: ({:.1}, {:.1}) HFR: {:.2}",
+                        i + 1,
+                        star.position.0,
+                        star.position.1,
+                        star.hfr
+                    );
+                }
+            } else if result.star_list.len() > 5 {
+                println!("\n  First 5 star positions:");
+                for (i, star) in result.star_list.iter().take(5).enumerate() {
+                    println!(
+                        "    #{}: ({:.1}, {:.1}) HFR: {:.2}",
+                        i + 1,
+                        star.position.0,
+                        star.position.1,
+                        star.hfr
+                    );
+                }
+            }
+        }
+        "hocusfocus" => {
+            let params = HocusFocusParams::default();
+
+            let result = detect_stars_hocus_focus(&image.data, image.width, image.height, &params);
+
+            println!("  Detected stars: {}", result.stars.len());
+            println!("  Average HFR: {:.3}", result.average_hfr);
+            println!("  Average FWHM: {:.3}", result.average_fwhm);
+            println!("  Noise Sigma: {:.1}", result.noise_sigma);
+            println!("  Background: {:.1}", result.background_mean);
+
+            // Update stats with detection results
+            stats.star_count = Some(result.stars.len());
+            stats.hfr = Some(result.average_hfr);
+
+            // Show first few stars if any detected
+            if !result.stars.is_empty() && result.stars.len() <= 5 {
+                println!("\n  Star positions:");
+                for (i, star) in result.stars.iter().enumerate() {
+                    println!(
+                        "    #{}: ({:.1}, {:.1}) HFR: {:.2}, SNR: {:.1}",
+                        i + 1,
+                        star.position.0,
+                        star.position.1,
+                        star.hfr,
+                        star.snr
+                    );
+                }
+            } else if result.stars.len() > 5 {
+                println!("\n  First 5 star positions:");
+                for (i, star) in result.stars.iter().take(5).enumerate() {
+                    println!(
+                        "    #{}: ({:.1}, {:.1}) HFR: {:.2}, SNR: {:.1}",
+                        i + 1,
+                        star.position.0,
+                        star.position.1,
+                        star.hfr,
+                        star.snr
+                    );
+                }
+            }
+        }
+        _ => {
+            return Err(anyhow::anyhow!(
+                "Unknown detector: {}. Valid options are: nina, hocusfocus",
+                detector
+            ));
+        }
+    }
+
+    Ok(())
 }
