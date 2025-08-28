@@ -144,6 +144,32 @@ pub enum Commands {
         #[arg(short, long, default_value = "table")]
         format: String,
     },
+
+    /// Convert FITS to PNG with MTF stretch applied
+    StretchToPng {
+        /// Path to FITS file
+        fits_path: String,
+
+        /// Output PNG path (if not provided, uses FITS filename with .png extension)
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// MTF midtone balance factor (0.0-1.0, default: 0.2)
+        #[arg(long, default_value = "0.2")]
+        midtone_factor: f64,
+
+        /// Shadow clipping in standard deviations (negative value, default: -2.8)
+        #[arg(long, default_value = "-2.8")]
+        shadow_clipping: f64,
+
+        /// Apply logarithmic scaling instead of MTF stretch
+        #[arg(long)]
+        logarithmic: bool,
+
+        /// Invert the image (black stars on white background)
+        #[arg(long)]
+        invert: bool,
+    },
 }
 
 #[derive(Parser, Debug, Clone)]

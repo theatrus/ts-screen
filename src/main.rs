@@ -17,7 +17,7 @@ mod mtf_stretch;
 use cli::{Cli, Commands};
 use commands::{
     analyze_fits_and_compare, dump_grading_results, filter_rejected_files, list_projects,
-    list_targets, read_fits, regrade_images, show_images, update_grade,
+    list_targets, read_fits, regrade_images, show_images, stretch_to_png, update_grade,
 };
 
 fn main() -> Result<()> {
@@ -99,6 +99,16 @@ fn main() -> Result<()> {
             let conn = Connection::open(&cli.database)
                 .with_context(|| format!("Failed to open database: {}", cli.database))?;
             analyze_fits_and_compare(&conn, &path, project, target, &format)?;
+        }
+        Commands::StretchToPng {
+            fits_path,
+            output,
+            midtone_factor,
+            shadow_clipping,
+            logarithmic,
+            invert,
+        } => {
+            stretch_to_png(&fits_path, output, midtone_factor, shadow_clipping, logarithmic, invert)?;
         }
     }
 

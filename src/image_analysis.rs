@@ -479,8 +479,10 @@ impl FitsImage {
                         bounds: BoundingBox {
                             x: min_x,
                             y: min_y,
-                            width: max_x - min_x + 1,
-                            height: max_y - min_y + 1,
+                            // Match NINA's behavior: width/height don't include the last pixel
+                            // This is technically incorrect but matches their implementation
+                            width: if max_x > min_x { max_x - min_x } else { 0 },
+                            height: if max_y > min_y { max_y - min_y } else { 0 },
                         },
                         pixels: blob_pixels,
                     });
@@ -559,7 +561,7 @@ impl FitsImage {
         
         // Use N.I.N.A. star detection with default parameters
         let mut params = StarDetectionParams::default();
-        params.sensitivity = StarSensitivity::High; // N.I.N.A. default is High
+        params.sensitivity = StarSensitivity::High; // Back to High sensitivity for better detection
         
         // Use stretched data for detection but original raw data for HFR measurement
         // This matches N.I.N.A.'s behavior

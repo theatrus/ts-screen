@@ -205,6 +205,14 @@ impl NoBlurCannyEdgeDetector {
 pub struct SISThreshold;
 
 impl SISThreshold {
+    pub fn new() -> Self {
+        Self
+    }
+    
+    pub fn calculate_threshold(&self, image: &[u8], width: usize, height: usize) -> u8 {
+        calculate_sis_threshold(image, width, height)
+    }
+    
     pub fn apply_in_place(&self, image: &mut [u8], width: usize, height: usize) {
         // Calculate threshold using SIS algorithm
         let threshold = calculate_sis_threshold(image, width, height);

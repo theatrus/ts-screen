@@ -870,6 +870,7 @@ dependencies = [
  "clap",
  "fitrs",
  "image",
+ "rand",
  "regex",
  "rusqlite",
  "serde",

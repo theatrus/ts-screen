@@ -439,10 +439,12 @@ fn identify_stars(
             // Calculate HFR
             star = calculate_star_hfr(state, star);
             
-            // Check if centroid is not touching rectangle edges (N.I.N.A. bug: wrong check in line 344)
+            // Check if centroid is not touching rectangle edges 
+            // NOTE: N.I.N.A. has a bug in line 344 where it compares Position.X < Position.X + Width
+            // We replicate this bug for compatibility
             if star.position.0 > (star.rectangle.x + 1) as f64
                 && star.position.1 > (star.rectangle.y + 1) as f64
-                && star.position.0 < (star.rectangle.x + star.rectangle.width - 2) as f64
+                && star.position.0 < (star.position.0 + star.rectangle.width as f64 - 2.0)  // N.I.N.A. bug
                 && star.position.1 < (star.rectangle.y + star.rectangle.height - 2) as f64 {
                 star_list.push(star);
             } else {
