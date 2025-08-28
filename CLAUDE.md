@@ -164,6 +164,10 @@ The statistical grading module provides advanced outlier detection:
 ### Development Commands
 
 ```bash
+# macOS: Set up libclang for OpenCV (required before building)
+export DYLD_FALLBACK_LIBRARY_PATH="$(xcode-select --print-path)/Toolchains/XcodeDefault.xctoolchain/usr/lib/"
+# Or add to ~/.zshrc for permanent setup
+
 # Run with verbose logging
 RUST_LOG=debug cargo run -- filter-rejected db.sqlite files --dry-run
 
@@ -492,6 +496,10 @@ sudo apt-get install libopencv-dev clang
 
 # macOS
 brew install opencv
+
+# IMPORTANT: macOS libclang setup (required)
+export DYLD_FALLBACK_LIBRARY_PATH="$(xcode-select --print-path)/Toolchains/XcodeDefault.xctoolchain/usr/lib/"
+# Add to ~/.zshrc or ~/.bash_profile for permanent setup
 
 # Set environment variables if needed
 export OPENCV_LINK_LIBS=opencv_world
