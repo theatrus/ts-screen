@@ -46,12 +46,12 @@ impl Default for HocusFocusParams {
             hotpixel_filtering: true,
             hotpixel_threshold: 0.001, // 0.1% of max ADU
             noise_reduction_radius: 4, // Actual default from user
-            
+
             // OpenCV enhancements (default enabled when available)
             use_opencv_morphology: true,
             use_opencv_wavelets: true,
             use_opencv_contours: true,
-            
+
             structure_layers: 4,
             noise_clipping_multiplier: 4.0,
             star_clipping_multiplier: 2.0,
@@ -301,7 +301,8 @@ fn create_structure_map(
     // Compute wavelet decomposition - use OpenCV enhanced version if enabled
     let residual = if params.use_opencv_wavelets {
         let wavelet_remover = WaveletStructureRemover::new(params.structure_layers);
-        if let Ok(enhanced_residual) = wavelet_remover.remove_structures(&float_data, width, height) {
+        if let Ok(enhanced_residual) = wavelet_remover.remove_structures(&float_data, width, height)
+        {
             enhanced_residual
         } else {
             // Fallback to original implementation if OpenCV fails
@@ -530,7 +531,10 @@ fn binarize(data: &[f64], threshold: f64) -> Vec<bool> {
 
 /// Convert bool vector to u8 vector for OpenCV processing
 fn bool_to_u8(binary_map: &[bool]) -> Vec<u8> {
-    binary_map.iter().map(|&b| if b { 255u8 } else { 0u8 }).collect()
+    binary_map
+        .iter()
+        .map(|&b| if b { 255u8 } else { 0u8 })
+        .collect()
 }
 
 /// Convert u8 vector back to bool vector
@@ -543,12 +547,15 @@ fn apply_erosion(binary_map: &[bool], width: usize, height: usize) -> Vec<bool> 
     // Try OpenCV erosion first
     let mut u8_data = bool_to_u8(binary_map);
     let morphology = OpenCVMorphology::new_ellipse(3); // Ellipse is better for breaking up components
-    
-    if morphology.erode_in_place(&mut u8_data, width, height).is_ok() {
+
+    if morphology
+        .erode_in_place(&mut u8_data, width, height)
+        .is_ok()
+    {
         // OpenCV erosion succeeded
         return u8_to_bool(&u8_data);
     }
-    
+
     // Fallback to original implementation
     let mut result = vec![false; width * height];
 

@@ -129,7 +129,11 @@ fn denormalize_u16(value: f64) -> u16 {
     // NINA: return (ushort)(val * ushort.MaxValue + (val < 0.5 ? 0.5 : 0.0));
     let clamped = value.clamp(0.0, 1.0);
     let scaled = clamped * 65535.0;
-    let rounded = if scaled < 32767.5 { scaled + 0.5 } else { scaled };
+    let rounded = if scaled < 32767.5 {
+        scaled + 0.5
+    } else {
+        scaled
+    };
     rounded as u16
 }
 

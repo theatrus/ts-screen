@@ -148,14 +148,18 @@ pub struct ImageInfo {
 }
 
 /// Extract image info from a FITS data array
-fn extract_image_info_from_array<T>(array: &fitrs::FitsDataArray<T>, hdu: &fitrs::Hdu) -> Option<ImageInfo> {
+fn extract_image_info_from_array<T>(
+    array: &fitrs::FitsDataArray<T>,
+    hdu: &fitrs::Hdu,
+) -> Option<ImageInfo> {
     let shape = &array.shape;
     if shape.len() >= 2 {
         let width = shape[0];
         let height = shape[1];
-        
+
         // Try to get bit depth from header
-        let bit_depth = hdu.value("BITPIX")
+        let bit_depth = hdu
+            .value("BITPIX")
             .and_then(|v| {
                 let s = format!("{:?}", v);
                 // Extract number from debug string like "Integer(16)" or "CharacterString(\"16\")"
@@ -175,7 +179,7 @@ fn extract_image_info_from_array<T>(array: &fitrs::FitsDataArray<T>, hdu: &fitrs
                 }
             })
             .unwrap_or(0);
-        
+
         Some(ImageInfo {
             width,
             height,
@@ -199,23 +203,56 @@ pub fn read_fits_metadata(path: &Path) -> Result<FitsMetadata> {
         .to_string();
 
     // Read primary HDU
-    let hdu = fits.get(0)
+    let hdu = fits
+        .get(0)
         .ok_or_else(|| anyhow::anyhow!("No HDU found in FITS file"))?;
 
     // Extract headers as key-value pairs
     let mut primary_header = HashMap::new();
-    
+
     // Common FITS header keywords to extract
     let keywords = vec![
-        "SIMPLE", "BITPIX", "NAXIS", "NAXIS1", "NAXIS2", "EXTEND",
-        "OBJECT", "DATE-OBS", "EXPTIME", "FILTER", "TELESCOP", "INSTRUME",
-        "OBSERVER", "GAIN", "CCD-TEMP", "XBINNING", "YBINNING", "FOCALLEN",
-        "FOCUSPOS", "OBJCTRA", "OBJCTDEC", "RA", "DEC", "AIRMASS",
-        "SWCREATE", "HFR", "STARS", "STARSFWHM", "EXTNAME", "OBJNAME",
-        "TARGET", "EXPOSURE", "FILTERNAME", "STARHFR", "MEANHFR",
-        "STARCOUNT", "NSTARS", "FWHM", "MEANFWHM",
+        "SIMPLE",
+        "BITPIX",
+        "NAXIS",
+        "NAXIS1",
+        "NAXIS2",
+        "EXTEND",
+        "OBJECT",
+        "DATE-OBS",
+        "EXPTIME",
+        "FILTER",
+        "TELESCOP",
+        "INSTRUME",
+        "OBSERVER",
+        "GAIN",
+        "CCD-TEMP",
+        "XBINNING",
+        "YBINNING",
+        "FOCALLEN",
+        "FOCUSPOS",
+        "OBJCTRA",
+        "OBJCTDEC",
+        "RA",
+        "DEC",
+        "AIRMASS",
+        "SWCREATE",
+        "HFR",
+        "STARS",
+        "STARSFWHM",
+        "EXTNAME",
+        "OBJNAME",
+        "TARGET",
+        "EXPOSURE",
+        "FILTERNAME",
+        "STARHFR",
+        "MEANHFR",
+        "STARCOUNT",
+        "NSTARS",
+        "FWHM",
+        "MEANFWHM",
     ];
-    
+
     // Try to read each keyword from the header
     for keyword in keywords {
         if let Some(value) = hdu.value(keyword) {
@@ -227,18 +264,10 @@ pub fn read_fits_metadata(path: &Path) -> Result<FitsMetadata> {
 
     // Extract image info from the actual data
     let image_info = match hdu.read_data() {
-        fitrs::FitsData::FloatingPoint32(array) => {
-            extract_image_info_from_array(&array, &hdu)
-        }
-        fitrs::FitsData::FloatingPoint64(array) => {
-            extract_image_info_from_array(&array, &hdu)
-        }
-        fitrs::FitsData::IntegersI32(array) => {
-            extract_image_info_from_array(&array, &hdu)
-        }
-        fitrs::FitsData::IntegersU32(array) => {
-            extract_image_info_from_array(&array, &hdu)
-        }
+        fitrs::FitsData::FloatingPoint32(array) => extract_image_info_from_array(&array, &hdu),
+        fitrs::FitsData::FloatingPoint64(array) => extract_image_info_from_array(&array, &hdu),
+        fitrs::FitsData::IntegersI32(array) => extract_image_info_from_array(&array, &hdu),
+        fitrs::FitsData::IntegersU32(array) => extract_image_info_from_array(&array, &hdu),
         _ => None,
     };
 

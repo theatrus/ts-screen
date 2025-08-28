@@ -28,14 +28,15 @@ impl FitsImage {
     /// Load FITS image data from file using fitrs
     pub fn from_file(path: &Path) -> Result<Self> {
         use fitrs::Fits;
-        
+
         let fits = Fits::open(path)
             .map_err(|e| anyhow::anyhow!("Failed to open FITS file {}: {}", path.display(), e))?;
-        
+
         // Get the primary HDU
-        let hdu = fits.get(0)
+        let hdu = fits
+            .get(0)
             .ok_or_else(|| anyhow::anyhow!("No HDU found in FITS file"))?;
-        
+
         // Read the image data using pattern matching
         let (data_f64, width, height) = match hdu.read_data() {
             fitrs::FitsData::FloatingPoint32(array) => {
@@ -64,7 +65,11 @@ impl FitsImage {
                 if shape.len() >= 2 {
                     let width = shape[0];
                     let height = shape[1];
-                    let data: Vec<f64> = array.data.into_iter().map(|opt| opt.unwrap_or(0) as f64).collect();
+                    let data: Vec<f64> = array
+                        .data
+                        .into_iter()
+                        .map(|opt| opt.unwrap_or(0) as f64)
+                        .collect();
                     (data, width, height)
                 } else {
                     return Err(anyhow::anyhow!("FITS file does not contain 2D image data"));
@@ -75,7 +80,11 @@ impl FitsImage {
                 if shape.len() >= 2 {
                     let width = shape[0];
                     let height = shape[1];
-                    let data: Vec<f64> = array.data.into_iter().map(|opt| opt.unwrap_or(0) as f64).collect();
+                    let data: Vec<f64> = array
+                        .data
+                        .into_iter()
+                        .map(|opt| opt.unwrap_or(0) as f64)
+                        .collect();
                     (data, width, height)
                 } else {
                     return Err(anyhow::anyhow!("FITS file does not contain 2D image data"));
@@ -85,31 +94,37 @@ impl FitsImage {
                 return Err(anyhow::anyhow!("Unsupported FITS data type"));
             }
         };
-        
+
         // Get total pixels
         let total_pixels = data_f64.len();
         if total_pixels == 0 {
             return Err(anyhow::anyhow!("FITS file contains no image data"));
         }
-        
+
         // Verify dimensions match data length
         if width * height != total_pixels {
-            return Err(anyhow::anyhow!("Image dimensions {}x{} don't match data length {}", width, height, total_pixels));
+            return Err(anyhow::anyhow!(
+                "Image dimensions {}x{} don't match data length {}",
+                width,
+                height,
+                total_pixels
+            ));
         }
-        
+
         // Convert f64 data to u16, scaling to 0-65535 range
         let min = data_f64.iter().fold(f64::INFINITY, |a, &b| a.min(b));
         let max = data_f64.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
-        
+
         let data_u16 = if max > min {
             let scale = 65535.0 / (max - min);
-            data_f64.into_iter()
+            data_f64
+                .into_iter()
                 .map(|v| ((v - min) * scale).clamp(0.0, 65535.0) as u16)
                 .collect()
         } else {
             vec![0u16; total_pixels]
         };
-        
+
         Ok(FitsImage {
             width,
             height,

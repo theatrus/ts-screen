@@ -1,11 +1,11 @@
 /// Exact implementation of N.I.N.A.'s star detection algorithm
 /// Based on StarDetection.cs from N.I.N.A. source code
 use crate::accord_imaging::*;
-use crate::opencv_morphology::OpenCVMorphology;
 use crate::opencv_contours::OpenCVBlobDetector;
+use crate::opencv_morphology::OpenCVMorphology;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// Convert 16-bit data to 8-bit using NINA's exact method 
+/// Convert 16-bit data to 8-bit using NINA's exact method
 /// Matches Accord.NET's Convert16bppTo8bpp: *d = (byte)(*s >> 8);
 fn convert_16bpp_to_8bpp_nina(data: &[u16]) -> Vec<u8> {
     data.iter().map(|&pixel| (pixel >> 8) as u8).collect()
@@ -344,18 +344,19 @@ fn prepare_for_structure_detection(
 fn detect_structures(image: &[u8], width: usize, height: usize) -> Vec<Blob> {
     // Try OpenCV contour detection first for better accuracy
     let detector = OpenCVBlobDetector::default();
-    
+
     if let Ok(contours) = detector.analyze_star_contours(image, width, height) {
         // Filter by quality and convert to blobs
-        let quality_contours: Vec<_> = contours.into_iter()
+        let quality_contours: Vec<_> = contours
+            .into_iter()
             .filter(|contour| detector.assess_star_quality(contour) > 0.3)
             .collect();
-        
+
         if !quality_contours.is_empty() {
             return OpenCVBlobDetector::star_contours_to_blobs(&quality_contours);
         }
     }
-    
+
     // Fallback to original blob detection
     let mut blob_counter = BlobCounter::new();
     blob_counter.process_image(image, width, height);

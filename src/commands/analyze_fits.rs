@@ -1,11 +1,11 @@
 use crate::db::Database;
-use anyhow::{Context, Result};
 use crate::hocus_focus_star_detection::{detect_stars_hocus_focus, HocusFocusParams};
 use crate::image_analysis::{FitsImage, ImageStatistics as ComputedStats};
 use crate::mtf_stretch::{stretch_image, StretchParameters};
 use crate::nina_star_detection::{
     detect_stars_with_original, NoiseReduction, StarDetectionParams, StarSensitivity,
 };
+use anyhow::{Context, Result};
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 
@@ -646,7 +646,7 @@ fn perform_star_detection(
                 use_roi: false,
             };
 
-            let detection_data ={
+            let detection_data = {
                 // Apply MTF stretching
                 let basic_stats = image.calculate_basic_statistics();
                 let stretch_params = StretchParameters::default();
