@@ -1,9 +1,9 @@
 use crate::db::Database;
 use anyhow::{Context, Result};
-use psf_guard::hocus_focus_star_detection::{detect_stars_hocus_focus, HocusFocusParams};
-use psf_guard::image_analysis::{FitsImage, ImageStatistics as ComputedStats};
-use psf_guard::mtf_stretch::{stretch_image, StretchParameters};
-use psf_guard::nina_star_detection::{
+use crate::hocus_focus_star_detection::{detect_stars_hocus_focus, HocusFocusParams};
+use crate::image_analysis::{FitsImage, ImageStatistics as ComputedStats};
+use crate::mtf_stretch::{stretch_image, StretchParameters};
+use crate::nina_star_detection::{
     detect_stars_with_original, NoiseReduction, StarDetectionParams, StarSensitivity,
 };
 use rusqlite::Connection;

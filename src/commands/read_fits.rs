@@ -1,6 +1,7 @@
-use crate::fits::{format_fits_metadata, read_fits_metadata, FitsMetadata};
 use anyhow::Result;
+use fitrs::Fits;
 use serde_json;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -102,7 +103,7 @@ fn read_fits_directory(dir: &Path, verbose: bool, format: &str) -> Result<()> {
 
             for (index, metadata) in successful_metadata.iter().enumerate() {
                 println!("File {}/{}:", index + 1, fits_files.len());
-                let formatted = format_fits_metadata(metadata, verbose);
+                let formatted = format_fits_metadata(&metadata, verbose);
                 println!("{}", formatted);
 
                 // Add separator between files if not last
@@ -120,6 +121,209 @@ fn read_fits_directory(dir: &Path, verbose: bool, format: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Metadata extracted from a FITS file
+#[derive(Debug, serde::Serialize)]
+pub struct FitsMetadata {
+    pub filename: String,
+    pub headers: Vec<HeaderInfo>,
+    pub primary_header: HashMap<String, String>,
+    pub image_info: Option<ImageInfo>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct HeaderInfo {
+    pub hdu_index: usize,
+    pub hdu_name: Option<String>,
+    pub keywords: HashMap<String, String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct ImageInfo {
+    pub width: usize,
+    pub height: usize,
+    pub bit_depth: i32,
+    pub dimensions: Vec<usize>,
+}
+
+/// Extract image info from a FITS data array
+fn extract_image_info_from_array<T>(array: &fitrs::FitsDataArray<T>, hdu: &fitrs::Hdu) -> Option<ImageInfo> {
+    let shape = &array.shape;
+    if shape.len() >= 2 {
+        let width = shape[0];
+        let height = shape[1];
+        
+        // Try to get bit depth from header
+        let bit_depth = hdu.value("BITPIX")
+            .and_then(|v| {
+                let s = format!("{:?}", v);
+                // Extract number from debug string like "Integer(16)" or "CharacterString(\"16\")"
+                if let Some(start) = s.find(|c: char| c.is_ascii_digit() || c == '-') {
+                    let mut end = start;
+                    while end < s.len() {
+                        let ch = s.chars().nth(end).unwrap();
+                        if ch.is_ascii_digit() || (end == start && ch == '-') {
+                            end += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    s[start..end].parse().ok()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0);
+        
+        Some(ImageInfo {
+            width,
+            height,
+            bit_depth,
+            dimensions: shape.clone(),
+        })
+    } else {
+        None
+    }
+}
+
+/// Read metadata from a FITS file using fitrs
+pub fn read_fits_metadata(path: &Path) -> Result<FitsMetadata> {
+    let fits = Fits::open(path)
+        .map_err(|e| anyhow::anyhow!("Failed to open FITS file {}: {:?}", path.display(), e))?;
+
+    let filename = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    // Read primary HDU
+    let hdu = fits.get(0)
+        .ok_or_else(|| anyhow::anyhow!("No HDU found in FITS file"))?;
+
+    // Extract headers as key-value pairs
+    let mut primary_header = HashMap::new();
+    
+    // Common FITS header keywords to extract
+    let keywords = vec![
+        "SIMPLE", "BITPIX", "NAXIS", "NAXIS1", "NAXIS2", "EXTEND",
+        "OBJECT", "DATE-OBS", "EXPTIME", "FILTER", "TELESCOP", "INSTRUME",
+        "OBSERVER", "GAIN", "CCD-TEMP", "XBINNING", "YBINNING", "FOCALLEN",
+        "FOCUSPOS", "OBJCTRA", "OBJCTDEC", "RA", "DEC", "AIRMASS",
+        "SWCREATE", "HFR", "STARS", "STARSFWHM", "EXTNAME", "OBJNAME",
+        "TARGET", "EXPOSURE", "FILTERNAME", "STARHFR", "MEANHFR",
+        "STARCOUNT", "NSTARS", "FWHM", "MEANFWHM",
+    ];
+    
+    // Try to read each keyword from the header
+    for keyword in keywords {
+        if let Some(value) = hdu.value(keyword) {
+            // Convert HeaderValue to string using Debug formatting for now
+            let value_str = format!("{:?}", value);
+            primary_header.insert(keyword.to_string(), value_str);
+        }
+    }
+
+    // Extract image info from the actual data
+    let image_info = match hdu.read_data() {
+        fitrs::FitsData::FloatingPoint32(array) => {
+            extract_image_info_from_array(&array, &hdu)
+        }
+        fitrs::FitsData::FloatingPoint64(array) => {
+            extract_image_info_from_array(&array, &hdu)
+        }
+        fitrs::FitsData::IntegersI32(array) => {
+            extract_image_info_from_array(&array, &hdu)
+        }
+        fitrs::FitsData::IntegersU32(array) => {
+            extract_image_info_from_array(&array, &hdu)
+        }
+        _ => None,
+    };
+
+    let headers = vec![HeaderInfo {
+        hdu_index: 0,
+        hdu_name: primary_header.get("EXTNAME").cloned(),
+        keywords: primary_header.clone(),
+    }];
+
+    Ok(FitsMetadata {
+        filename,
+        headers,
+        primary_header,
+        image_info,
+    })
+}
+
+/// Format FITS metadata for display
+pub fn format_fits_metadata(metadata: &FitsMetadata, verbose: bool) -> String {
+    let mut output = String::new();
+
+    output.push_str(&format!("Filename: {}\n", metadata.filename));
+
+    if let Some(ref img_info) = metadata.image_info {
+        output.push_str(&format!(
+            "Image: {}x{} ({}-bit)\n",
+            img_info.width, img_info.height, img_info.bit_depth
+        ));
+    }
+
+    // Display key headers
+    let key_headers = vec![
+        ("OBJECT", "Object"),
+        ("DATE-OBS", "Observation Date"),
+        ("EXPTIME", "Exposure"),
+        ("FILTER", "Filter"),
+        ("TELESCOP", "Telescope"),
+        ("INSTRUME", "Instrument"),
+        ("OBSERVER", "Observer"),
+        ("GAIN", "Gain"),
+        ("CCD-TEMP", "CCD Temperature"),
+        ("XBINNING", "Binning"),
+        ("FOCALLEN", "Focal Length"),
+        ("FOCUSPOS", "Focus Position"),
+        ("OBJCTRA", "RA"),
+        ("OBJCTDEC", "DEC"),
+        ("AIRMASS", "Airmass"),
+    ];
+
+    output.push_str("\nKey Headers:\n");
+    for (key, label) in key_headers {
+        if let Some(value) = metadata.primary_header.get(key) {
+            output.push_str(&format!("  {}: {}\n", label, value));
+        }
+    }
+
+    // N.I.N.A. specific headers
+    if metadata.primary_header.contains_key("SWCREATE") {
+        output.push_str("\nN.I.N.A. Headers:\n");
+        if let Some(v) = metadata.primary_header.get("SWCREATE") {
+            output.push_str(&format!("  Software: {}\n", v));
+        }
+        if let Some(v) = metadata.primary_header.get("HFR") {
+            output.push_str(&format!("  HFR: {}\n", v));
+        }
+        if let Some(v) = metadata.primary_header.get("STARS") {
+            output.push_str(&format!("  Stars: {}\n", v));
+        }
+        if let Some(v) = metadata.primary_header.get("STARSFWHM") {
+            output.push_str(&format!("  FWHM: {}\n", v));
+        }
+    }
+
+    if verbose {
+        output.push_str("\nAll Headers:\n");
+        let mut keys: Vec<_> = metadata.primary_header.keys().collect();
+        keys.sort();
+        for key in keys {
+            if let Some(value) = metadata.primary_header.get(key) {
+                output.push_str(&format!("  {}: {}\n", key, value));
+            }
+        }
+    }
+
+    output
 }
 
 fn find_fits_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {

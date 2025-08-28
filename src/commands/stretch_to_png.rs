@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use image::{ImageBuffer, Luma, Rgb};
+use image::{ImageBuffer, Luma};
 use std::path::{Path, PathBuf};
 
 use crate::image_analysis::FitsImage;

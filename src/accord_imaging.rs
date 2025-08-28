@@ -1,8 +1,6 @@
 //! Rust implementation of Accord.NET imaging functions used by N.I.N.A.
 //! Based on the exact algorithms from the Accord.NET framework
 
-// Remove unused imports
-
 /// Detection utility functions
 pub struct DetectionUtility;
 
@@ -347,14 +345,11 @@ impl SimpleShapeChecker {
 }
 
 /// Fast Gaussian blur implementation
-pub struct FastGaussianBlur {
-    #[allow(dead_code)]
-    radius: i32,
-}
+pub struct FastGaussianBlur;
 
 impl FastGaussianBlur {
     pub fn new() -> Self {
-        Self { radius: 1 }
+        Self
     }
 
     pub fn process(&self, image: &[u8], width: usize, height: usize, radius: i32) -> Vec<u8> {

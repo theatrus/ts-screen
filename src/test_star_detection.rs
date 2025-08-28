@@ -30,9 +30,7 @@ mod tests {
     struct SyntheticStar {
         pub x: f64,
         pub y: f64,
-        #[allow(dead_code)]
         pub radius: f64,
-        #[allow(dead_code)]
         pub peak_brightness: u16,
         pub fwhm: f64, // Full Width Half Maximum
     }

@@ -2,20 +2,8 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use rusqlite::Connection;
 
-mod accord_imaging;
-mod cli;
-mod commands;
-mod db;
-mod fits;
-mod grading;
-mod image_analysis;
-mod models;
-mod mtf_stretch;
-mod nina_star_detection;
-mod utils;
-
-use cli::{Cli, Commands};
-use commands::{
+use psf_guard::cli::{Cli, Commands};
+use psf_guard::commands::{
     analyze_fits_and_compare, dump_grading_results, filter_rejected_files, list_projects,
     list_targets, read_fits, regrade_images, show_images, stretch_to_png, update_grade,
 };
