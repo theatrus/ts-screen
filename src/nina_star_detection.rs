@@ -2,6 +2,7 @@
 /// Based on StarDetection.cs from N.I.N.A. source code
 
 use crate::accord_imaging::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Convert 16-bit data to 8-bit using NINA's exact method (right shift by 8)
 fn convert_16bpp_to_8bpp_nina(data: &[u16]) -> Vec<u8> {
@@ -357,10 +358,12 @@ fn identify_stars(
             continue;
         }
         
-        // ROI filtering (simplified - not implemented)
+        // ROI filtering - skip if outside ROI when enabled
         if params.use_roi {
-            // TODO: Implement InROI check
-            roi_filtered += 1;
+            // TODO: Implement proper InROI check based on inner/outer crop ratios
+            // For now, don't filter since we don't have ROI bounds
+            // roi_filtered += 1;
+            // continue;
         }
         
         // Scale rectangle back to original coordinates
@@ -518,11 +521,16 @@ fn analyze_star_pixels(
     let mut large_rect_pixel_sum_squares = 0.0;
     let mut inner_star_bright_pixels = 0;
     
+    // Also track original data for HFR background calculation
+    let mut original_background_sum = 0.0;
+    let mut original_background_count = 0;
+    
     // Process pixels
     for y in large_rect.y..(large_rect.y + large_rect.height) {
         for x in large_rect.x..(large_rect.x + large_rect.width) {
             if x >= 0 && y >= 0 && (x as usize) < state.width && (y as usize) < state.height {
-                let pixel_value = state.original_data[(y as usize) * state.width + (x as usize)] as f64;
+                // Use detection_data (stretched) for brightness analysis
+                let pixel_value = state.detection_data[(y as usize) * state.width + (x as usize)] as f64;
                 
                 // Check if in star rectangle
                 if x >= star.rectangle.x && x < star.rectangle.x + star.rectangle.width
@@ -537,6 +545,9 @@ fn analyze_star_pixels(
                     // Background pixel
                     large_rect_pixel_sum += pixel_value;
                     large_rect_pixel_sum_squares += pixel_value * pixel_value;
+                    // Track original background for HFR
+                    original_background_sum += state.original_data[(y as usize) * state.width + (x as usize)] as f64;
+                    original_background_count += 1;
                 }
             }
         }
@@ -549,7 +560,13 @@ fn analyze_star_pixels(
     star.mean_brightness = star_pixel_sum / star_pixel_count as f64;
     let large_rect_pixel_count = (large_rect.height * large_rect.width - star.rectangle.height * star.rectangle.width) as f64;
     let large_rect_mean = large_rect_pixel_sum / large_rect_pixel_count;
-    star.surrounding_mean = large_rect_mean;
+    
+    // Use original data background for HFR calculation
+    star.surrounding_mean = if original_background_count > 0 {
+        original_background_sum / original_background_count as f64
+    } else {
+        large_rect_mean  // Fallback
+    };
     let large_rect_stdev = ((large_rect_pixel_sum_squares - large_rect_pixel_count * large_rect_mean * large_rect_mean) / large_rect_pixel_count).sqrt();
     
     // Minimum bright pixels threshold
@@ -561,7 +578,8 @@ fn analyze_star_pixels(
         for x in star.rectangle.x..(star.rectangle.x + star.rectangle.width) {
             if x >= 0 && y >= 0 && (x as usize) < state.width && (y as usize) < state.height {
                 if inside_circle(x as f64, y as f64, star.position.0, star.position.1, star.radius) {
-                    let pixel_value = state.original_data[(y as usize) * state.width + (x as usize)] as f64;
+                    // Use detection_data (stretched) for brightness check
+                    let pixel_value = state.detection_data[(y as usize) * state.width + (x as usize)] as f64;
                     if pixel_value > bright_pixel_threshold {
                         inner_star_bright_pixels += 1;
                     }
@@ -573,6 +591,16 @@ fn analyze_star_pixels(
     // Check detection criteria
     let brightness_threshold = large_rect_mean + (0.1 * large_rect_mean).min(large_rect_stdev);
     let is_star = star.mean_brightness >= brightness_threshold && inner_star_bright_pixels > minimum_bright_pixels;
+    
+    // Debug why stars fail
+    if !is_star && star_pixel_count > 0 {
+        static FAIL_COUNT: AtomicUsize = AtomicUsize::new(0);
+        let count = FAIL_COUNT.fetch_add(1, Ordering::Relaxed);
+        if count < 5 {  // Only print first 5 failures
+            eprintln!("Debug: Star failed - brightness: {:.1} vs threshold: {:.1}, bright_pixels: {} vs minimum: {}", 
+                star.mean_brightness, brightness_threshold, inner_star_bright_pixels, minimum_bright_pixels);
+        }
+    }
     
     (is_star, star)
 }
