@@ -145,7 +145,7 @@ pub enum Commands {
         format: String,
 
         /// Star detection algorithm to use (nina, hocusfocus)
-        #[arg(long, default_value = "nina")]
+        #[arg(long, default_value = "hocusfocus")]
         detector: String,
 
         /// Star detection sensitivity (normal, high, highest)
@@ -153,7 +153,7 @@ pub enum Commands {
         sensitivity: String,
 
         /// Apply MTF stretch before detection (enabled by default, use --no-apply-stretch to disable)
-        #[arg(long, default_value = "true")]
+        #[arg(long, default_value = "false")]
         apply_stretch: bool,
 
         /// Enable verbose debug output

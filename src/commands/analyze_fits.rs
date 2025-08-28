@@ -638,6 +638,7 @@ fn perform_star_detection(
                 "highest" => StarSensitivity::Highest,
                 _ => StarSensitivity::Normal,
             };
+            println!("  Forcing stretch for NINA");
 
             let params = StarDetectionParams {
                 sensitivity: star_sensitivity,
@@ -645,7 +646,7 @@ fn perform_star_detection(
                 use_roi: false,
             };
 
-            let detection_data = if apply_stretch {
+            let detection_data ={
                 // Apply MTF stretching
                 let basic_stats = image.calculate_basic_statistics();
                 let stretch_params = StretchParameters::default();
@@ -655,8 +656,6 @@ fn perform_star_detection(
                     stretch_params.factor,
                     stretch_params.black_clipping,
                 )
-            } else {
-                image.data.clone()
             };
 
             let result = detect_stars_with_original(
