@@ -1,8 +1,8 @@
 /// Exact implementation of N.I.N.A.'s star detection algorithm
 /// Based on StarDetection.cs from N.I.N.A. source code
 use crate::accord_imaging::*;
+use crate::opencv_canny::{OpenCVCanny, OpenCVThreshold, OpenCVBinaryMorphology, OpenCVNoiseReduction};
 use crate::opencv_contours::OpenCVBlobDetector;
-use crate::opencv_morphology::OpenCVMorphology;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Convert 16-bit data to 8-bit using NINA's exact method
@@ -280,20 +280,48 @@ fn reduce_noise(
     match noise_reduction {
         NoiseReduction::None => image.to_vec(),
         NoiseReduction::Normal => {
-            let blur = FastGaussianBlur::new();
-            blur.process(image, width, height, 1)
+            // Try OpenCV first
+            match OpenCVNoiseReduction::gaussian_blur(image, width, height, 1.0) {
+                Ok(blurred) => blurred,
+                Err(e) => {
+                    eprintln!("OpenCV Gaussian blur failed: {}, using fallback", e);
+                    let blur = FastGaussianBlur::new();
+                    blur.process(image, width, height, 1)
+                }
+            }
         }
         NoiseReduction::High => {
-            let blur = FastGaussianBlur::new();
-            blur.process(image, width, height, 2)
+            // Try OpenCV first
+            match OpenCVNoiseReduction::gaussian_blur(image, width, height, 2.0) {
+                Ok(blurred) => blurred,
+                Err(e) => {
+                    eprintln!("OpenCV Gaussian blur failed: {}, using fallback", e);
+                    let blur = FastGaussianBlur::new();
+                    blur.process(image, width, height, 2)
+                }
+            }
         }
         NoiseReduction::Highest => {
-            let blur = FastGaussianBlur::new();
-            blur.process(image, width, height, 3)
+            // Try OpenCV first
+            match OpenCVNoiseReduction::gaussian_blur(image, width, height, 3.0) {
+                Ok(blurred) => blurred,
+                Err(e) => {
+                    eprintln!("OpenCV Gaussian blur failed: {}, using fallback", e);
+                    let blur = FastGaussianBlur::new();
+                    blur.process(image, width, height, 3)
+                }
+            }
         }
         NoiseReduction::Median => {
-            let median = Median;
-            median.apply(image, width, height)
+            // Try OpenCV median filter (3x3 kernel)
+            match OpenCVNoiseReduction::median_blur(image, width, height, 3) {
+                Ok(blurred) => blurred,
+                Err(e) => {
+                    eprintln!("OpenCV median blur failed: {}, using fallback", e);
+                    let median = Median;
+                    median.apply(image, width, height)
+                }
+            }
         }
     }
 }
@@ -304,16 +332,37 @@ fn prepare_for_structure_detection(
     height: usize,
     params: &StarDetectionParams,
 ) {
-    // Apply Canny edge detector
-    // N.I.N.A. uses NoBlurCanny for High/Highest sensitivity, regular Canny for Normal
-    match params.sensitivity {
+    // Apply Canny edge detector using OpenCV
+    let canny = OpenCVCanny::new(10, 80);
+    let canny_result = match params.sensitivity {
         StarSensitivity::Normal => {
-            let canny = CannyEdgeDetector::new(10, 80);
-            canny.apply_in_place(image, width, height);
+            // Apply with Gaussian blur for Normal sensitivity
+            canny.apply_with_blur(image, width, height, 5, 1.4)
         }
         StarSensitivity::High | StarSensitivity::Highest => {
-            let canny = CannyEdgeDetector::new_no_blur(10, 80);
-            canny.apply_in_place(image, width, height);
+            // No blur for High/Highest sensitivity
+            canny.apply(image, width, height)
+        }
+    };
+    
+    match canny_result {
+        Ok(edges) => {
+            // Copy result back to image
+            image.copy_from_slice(&edges);
+        }
+        Err(e) => {
+            eprintln!("OpenCV Canny failed: {}, using fallback", e);
+            // Fallback to original implementation
+            match params.sensitivity {
+                StarSensitivity::Normal => {
+                    let canny = CannyEdgeDetector::new(10, 80);
+                    canny.apply_in_place(image, width, height);
+                }
+                StarSensitivity::High | StarSensitivity::Highest => {
+                    let canny = CannyEdgeDetector::new_no_blur(10, 80);
+                    canny.apply_in_place(image, width, height);
+                }
+            }
         }
     }
 
@@ -324,20 +373,34 @@ fn prepare_for_structure_detection(
         edge_pixels
     );
 
-    // Apply SIS threshold
-    let sis = SISThreshold;
-    sis.apply_in_place(image, width, height);
+    // Apply SIS threshold using OpenCV
+    match OpenCVThreshold::apply_sis(image, width, height) {
+        Ok(thresholded) => {
+            image.copy_from_slice(&thresholded);
+        }
+        Err(e) => {
+            eprintln!("OpenCV threshold failed: {}, using fallback", e);
+            // Fallback to original implementation
+            let sis = SISThreshold;
+            sis.apply_in_place(image, width, height);
+        }
+    }
 
     // Debug: Count non-zero pixels after SIS
     let non_zero = image.iter().filter(|&&p| p > 0).count();
     eprintln!("Debug: After SIS threshold - {} non-zero pixels", non_zero);
 
-    // Apply binary dilation - use OpenCV if available, fallback to simple version
-    let morphology = OpenCVMorphology::new_rectangle(3); // 3x3 to match NINA
-    if let Err(_) = morphology.dilate_in_place(image, width, height) {
-        // Fallback to original implementation if OpenCV fails
-        let dilation = BinaryDilation3x3;
-        dilation.apply_in_place(image, width, height);
+    // Apply binary dilation using OpenCV
+    match OpenCVBinaryMorphology::dilate_3x3(image, width, height) {
+        Ok(dilated) => {
+            image.copy_from_slice(&dilated);
+        }
+        Err(e) => {
+            eprintln!("OpenCV dilation failed: {}, using fallback", e);
+            // Fallback to original implementation
+            let dilation = BinaryDilation3x3;
+            dilation.apply_in_place(image, width, height);
+        }
     }
 }
 

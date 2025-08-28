@@ -9,6 +9,7 @@ pub mod image_analysis;
 pub mod models;
 pub mod mtf_stretch;
 pub mod nina_star_detection;
+pub mod opencv_canny;
 pub mod opencv_contours;
 pub mod opencv_morphology;
 #[cfg(feature = "opencv")]

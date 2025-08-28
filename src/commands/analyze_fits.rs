@@ -4,7 +4,6 @@ use crate::mtf_stretch::{stretch_image, StretchParameters};
 use crate::nina_star_detection::{
     detect_stars_with_original, NoiseReduction, StarDetectionParams, StarSensitivity,
 };
-use crate::models::AcquiredImage;
 use anyhow::Result;
 use rusqlite::Connection;
 use serde::Deserialize;
