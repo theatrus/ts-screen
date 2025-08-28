@@ -2,9 +2,9 @@
 use std::error::Error;
 
 #[cfg(feature = "opencv")]
-use crate::opencv_utils::*;
-#[cfg(feature = "opencv")]
 use crate::opencv_gaussian_blur;
+#[cfg(feature = "opencv")]
+use crate::opencv_utils::*;
 #[cfg(feature = "opencv")]
 use opencv::{imgproc, prelude::*};
 

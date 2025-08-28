@@ -1,14 +1,14 @@
-use anyhow::Result;
 #[cfg(feature = "opencv")]
 use crate::opencv_gaussian_blur;
+use anyhow::Result;
+#[cfg(feature = "opencv")]
+use opencv::core;
 #[cfg(feature = "opencv")]
 use opencv::photo::{edge_preserving_filter, RECURS_FILTER};
 #[cfg(feature = "opencv")]
 use opencv::prelude::*;
 #[cfg(feature = "opencv")]
 use opencv::ximgproc::dt_filter;
-#[cfg(feature = "opencv")]
-use opencv::{core, imgproc};
 
 /// Wavelet-based structure removal for astronomical images
 pub struct WaveletStructureRemover {

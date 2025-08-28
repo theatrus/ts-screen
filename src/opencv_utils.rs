@@ -5,33 +5,24 @@ use opencv::{core, Result as OpenCVResult};
 /// Macro to handle gaussian_blur with or without AlgorithmHint based on OpenCV version
 #[macro_export]
 macro_rules! opencv_gaussian_blur {
-    ($src:expr, $dst:expr, $ksize:expr, $sigma_x:expr, $sigma_y:expr, $border_type:expr) => {
+    ($src:expr, $dst:expr, $ksize:expr, $sigma_x:expr, $sigma_y:expr, $border_type:expr) => {{
+        #[cfg(opencv_has_algorithm_hint)]
         {
-            #[cfg(opencv_has_algorithm_hint)]
-            {
-                opencv::imgproc::gaussian_blur(
-                    $src, 
-                    $dst, 
-                    $ksize, 
-                    $sigma_x, 
-                    $sigma_y, 
-                    $border_type,
-                    opencv::core::AlgorithmHint::ALGO_HINT_ACCURATE
-                )
-            }
-            #[cfg(not(opencv_has_algorithm_hint))]
-            {
-                opencv::imgproc::gaussian_blur(
-                    $src, 
-                    $dst, 
-                    $ksize, 
-                    $sigma_x, 
-                    $sigma_y, 
-                    $border_type
-                )
-            }
+            opencv::imgproc::gaussian_blur(
+                $src,
+                $dst,
+                $ksize,
+                $sigma_x,
+                $sigma_y,
+                $border_type,
+                opencv::core::AlgorithmHint::ALGO_HINT_ACCURATE,
+            )
         }
-    };
+        #[cfg(not(opencv_has_algorithm_hint))]
+        {
+            opencv::imgproc::gaussian_blur($src, $dst, $ksize, $sigma_x, $sigma_y, $border_type)
+        }
+    }};
 }
 
 /// Convert u16 slice to OpenCV Mat for image processing
