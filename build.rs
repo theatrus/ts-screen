@@ -60,8 +60,9 @@ fn detect_opencv_version() {
                     String::from_utf8_lossy(&output.stdout).trim().to_string()
                 }
                 _ => {
-                    // If we can't detect version, assume older version
-                    eprintln!("cargo:warning=Could not detect OpenCV version, assuming older");
+                    // If we can't detect version, assume newer version
+                    println!("cargo:rustc-cfg=opencv_has_algorithm_hint");
+                    eprintln!("cargo:warning=Could not detect OpenCV version, assuming newer");
                     return;
                 }
             }
