@@ -156,14 +156,6 @@ pub enum Commands {
         #[arg(long, default_value = "false")]
         apply_stretch: bool,
 
-        /// Use OpenCV morphology operations in HocusFocus (when compiled with opencv feature)
-        #[arg(long, default_value = "true")]
-        use_opencv_morphology: bool,
-
-        /// Use OpenCV wavelets in HocusFocus (when compiled with opencv feature)
-        #[arg(long, default_value = "true")]
-        use_opencv_wavelets: bool,
-
         /// Compare all detector combinations (overrides individual settings)
         #[arg(long)]
         compare_all: bool,

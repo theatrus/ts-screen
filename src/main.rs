@@ -87,8 +87,6 @@ fn main() -> Result<()> {
             detector,
             sensitivity,
             apply_stretch,
-            use_opencv_morphology,
-            use_opencv_wavelets,
             compare_all,
             verbose,
         } => {
@@ -103,8 +101,6 @@ fn main() -> Result<()> {
                 &detector,
                 &sensitivity,
                 apply_stretch,
-                use_opencv_morphology,
-                use_opencv_wavelets,
                 compare_all,
                 verbose,
             )?;

@@ -25,8 +25,6 @@ struct DetectorConfig {
     name: String,
     detector: String,
     sensitivity: String,
-    use_opencv_morphology: bool,
-    use_opencv_wavelets: bool,
 }
 
 pub fn analyze_fits_and_compare(
@@ -38,8 +36,6 @@ pub fn analyze_fits_and_compare(
     detector: &str,
     sensitivity: &str,
     apply_stretch: bool,
-    use_opencv_morphology: bool,
-    use_opencv_wavelets: bool,
     compare_all: bool,
     _verbose: bool,
 ) -> Result<()> {
@@ -71,8 +67,6 @@ pub fn analyze_fits_and_compare(
                 detector,
                 sensitivity,
                 apply_stretch,
-                use_opencv_morphology,
-                use_opencv_wavelets,
             )?;
         } else if fits_path.is_dir() {
             analyze_fits_directory(
@@ -82,8 +76,6 @@ pub fn analyze_fits_and_compare(
                 detector,
                 sensitivity,
                 apply_stretch,
-                use_opencv_morphology,
-                use_opencv_wavelets,
             )?;
         } else {
             return Err(anyhow::anyhow!(
@@ -105,50 +97,14 @@ fn generate_detector_configs() -> Vec<DetectorConfig> {
             name: format!("NINA-{}", sensitivity),
             detector: "nina".to_string(),
             sensitivity: sensitivity.to_string(),
-            use_opencv_morphology: false,
-            use_opencv_wavelets: false,
         });
     }
     
-    // HocusFocus configurations
-    // Check if OpenCV is available
-    #[cfg(feature = "opencv")]
-    {
-        // Full OpenCV
-        configs.push(DetectorConfig {
-            name: "HocusFocus-OpenCV-Full".to_string(),
-            detector: "hocusfocus".to_string(),
-            sensitivity: "normal".to_string(),
-            use_opencv_morphology: true,
-            use_opencv_wavelets: true,
-        });
-        
-        // OpenCV morphology only
-        configs.push(DetectorConfig {
-            name: "HocusFocus-OpenCV-Morphology".to_string(),
-            detector: "hocusfocus".to_string(),
-            sensitivity: "normal".to_string(),
-            use_opencv_morphology: true,
-            use_opencv_wavelets: false,
-        });
-        
-        // OpenCV wavelets only
-        configs.push(DetectorConfig {
-            name: "HocusFocus-OpenCV-Wavelets".to_string(),
-            detector: "hocusfocus".to_string(),
-            sensitivity: "normal".to_string(),
-            use_opencv_morphology: false,
-            use_opencv_wavelets: true,
-        });
-    }
-    
-    // Pure Rust fallback
+    // HocusFocus configuration (always tries OpenCV first with automatic fallback)
     configs.push(DetectorConfig {
-        name: "HocusFocus-PureRust".to_string(),
+        name: "HocusFocus".to_string(),
         detector: "hocusfocus".to_string(),
         sensitivity: "normal".to_string(),
-        use_opencv_morphology: false,
-        use_opencv_wavelets: false,
     });
     
     configs
@@ -287,9 +243,7 @@ fn run_detector_config(
             Ok((result.star_list.len(), result.average_hfr, result.hfr_std_dev))
         }
         "hocusfocus" => {
-            let mut params = HocusFocusParams::default();
-            params.use_opencv_morphology = config.use_opencv_morphology;
-            params.use_opencv_wavelets = config.use_opencv_wavelets;
+            let params = HocusFocusParams::default();
 
             let detection_data = if apply_stretch {
                 let stretch_params = StretchParameters::default();
@@ -324,8 +278,6 @@ fn analyze_single_fits(
     detector: &str,
     sensitivity: &str,
     apply_stretch: bool,
-    use_opencv_morphology: bool,
-    use_opencv_wavelets: bool,
 ) -> Result<()> {
     let filename = fits_path
         .file_name()
@@ -345,8 +297,6 @@ fn analyze_single_fits(
         detector,
         sensitivity,
         apply_stretch,
-        use_opencv_morphology,
-        use_opencv_wavelets,
     )?;
 
     // Look for matching database entries
@@ -369,8 +319,6 @@ fn analyze_fits_directory(
     detector: &str,
     sensitivity: &str,
     apply_stretch: bool,
-    use_opencv_morphology: bool,
-    use_opencv_wavelets: bool,
 ) -> Result<()> {
     let mut fits_files = Vec::new();
 
@@ -413,8 +361,6 @@ fn analyze_fits_directory(
             detector,
             sensitivity,
             apply_stretch,
-            use_opencv_morphology,
-            use_opencv_wavelets,
         ) {
             eprintln!("Error analyzing {}: {}", fits_path.display(), e);
         }
@@ -429,8 +375,6 @@ fn detect_stars(
     detector: &str,
     sensitivity: &str,
     apply_stretch: bool,
-    use_opencv_morphology: bool,
-    use_opencv_wavelets: bool,
 ) -> Result<(usize, f64, f64, String)> {
     let detection_info;
 
@@ -466,12 +410,9 @@ fn detect_stars(
             Ok((result.star_list.len(), result.average_hfr, result.hfr_std_dev, detection_info))
         }
         "hocusfocus" => {
-            println!("  OpenCV Morphology: {}", use_opencv_morphology);
-            println!("  OpenCV Wavelets: {}", use_opencv_wavelets);
+            println!("  Using OpenCV with automatic fallback");
 
-            let mut params = HocusFocusParams::default();
-            params.use_opencv_morphology = use_opencv_morphology;
-            params.use_opencv_wavelets = use_opencv_wavelets;
+            let params = HocusFocusParams::default();
 
             let detection_data = if apply_stretch {
                 let stretch_params = StretchParameters::default();
@@ -482,11 +423,7 @@ fn detect_stars(
 
             let result = detect_stars_hocus_focus(&detection_data, fits.width, fits.height, &params);
             
-            let mut info_parts = vec!["HocusFocus"];
-            if use_opencv_morphology { info_parts.push("OpenCV-Morph"); }
-            if use_opencv_wavelets { info_parts.push("OpenCV-Wave"); }
-            if !use_opencv_morphology && !use_opencv_wavelets { info_parts.push("PureRust"); }
-            detection_info = info_parts.join(" ");
+            detection_info = "HocusFocus".to_string();
 
             if result.stars.is_empty() {
                 Ok((0, 0.0, 0.0, detection_info))
