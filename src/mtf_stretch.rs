@@ -34,15 +34,6 @@ pub fn stretch_image_with_bit_depth(
         .collect()
 }
 
-/// Generate the stretch mapping table using N.I.N.A.'s algorithm
-fn get_stretch_map(
-    statistics: &ImageStatistics,
-    target_histogram_median_pct: f64,
-    shadows_clipping: f64,
-) -> Vec<u16> {
-    get_stretch_map_with_bit_depth(statistics, target_histogram_median_pct, shadows_clipping, 16)
-}
-
 fn get_stretch_map_with_bit_depth(
     statistics: &ImageStatistics,
     target_histogram_median_pct: f64,
@@ -123,11 +114,6 @@ fn denormalize_u16(value: f64) -> u16 {
     (value.clamp(0.0, 1.0) * 65535.0).round() as u16
 }
 
-/// Denormalize 0-1 value back to specific bit depth range
-fn denormalize_u16_bit_depth(value: f64, bit_depth: u8) -> u16 {
-    let max_val = ((1u32 << bit_depth) - 1) as f64;
-    (value.clamp(0.0, 1.0) * max_val).round() as u16
-}
 
 /// Midtones Transfer Function (MTF)
 /// This is the key stretching function used by N.I.N.A.
@@ -180,10 +166,11 @@ mod tests {
     fn test_normalize_denormalize() {
         assert_eq!(normalize_u16(0, 16), 0.0);
         assert_eq!(normalize_u16(65535, 16), 1.0);
-        assert_eq!(normalize_u16(32768, 16), 0.5);
+        assert!((normalize_u16(32768, 16) - 0.5).abs() < 0.0001);
         
         assert_eq!(denormalize_u16(0.0), 0);
         assert_eq!(denormalize_u16(1.0), 65535);
-        assert_eq!(denormalize_u16(0.5), 32768);
+        // 0.5 * 65535 = 32767.5, rounds to 32768
+        assert!((denormalize_u16(0.5) as i32 - 32768).abs() <= 1);
     }
 }

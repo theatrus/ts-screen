@@ -38,11 +38,9 @@ fn round_half_to_even(x: f64) -> f64 {
 pub struct StarDetectionParams {
     pub sensitivity: StarSensitivity,
     pub noise_reduction: NoiseReduction,
-    pub is_auto_focus: bool,
     pub use_roi: bool,
     pub inner_crop_ratio: f64,
     pub outer_crop_ratio: f64,
-    pub number_of_af_stars: usize,
 }
 
 impl Default for StarDetectionParams {
@@ -50,11 +48,9 @@ impl Default for StarDetectionParams {
         Self {
             sensitivity: StarSensitivity::Normal,
             noise_reduction: NoiseReduction::None,
-            is_auto_focus: false,
             use_roi: false,
             inner_crop_ratio: 1.0,
             outer_crop_ratio: 1.0,
-            number_of_af_stars: 0,
         }
     }
 }
@@ -116,29 +112,18 @@ pub struct DetectedStar {
     pub average_brightness: f64,
     pub max_brightness: f64,
     pub background: f64,
-    pub bounding_box: Rectangle,
 }
 
 /// Star detection result
 #[derive(Debug, Clone)]
 pub struct StarDetectionResult {
     pub average_hfr: f64,
-    pub detected_stars: usize,
     pub hfr_std_dev: f64,
     pub star_list: Vec<DetectedStar>,
 }
 
 const MAX_WIDTH: usize = 1552;
 
-/// Main star detection function matching N.I.N.A.'s implementation
-pub fn detect_stars(
-    image_data_16bit: &[u16],
-    width: usize,
-    height: usize,
-    params: &StarDetectionParams,
-) -> StarDetectionResult {
-    detect_stars_with_original(image_data_16bit, image_data_16bit, width, height, params)
-}
 
 /// Star detection with separate detection and measurement data
 /// This matches N.I.N.A.'s behavior where detection uses stretched data
@@ -196,12 +181,11 @@ pub fn detect_stars_with_original(
     eprintln!("Debug: Detected {} blobs", blobs.len());
     
     // Step 7: Identify stars
-    let (star_list, detected_stars) = identify_stars(params, &state, blobs, resized_width, resized_height);
+    let (star_list, _detected_stars) = identify_stars(params, &state, blobs, resized_width, resized_height);
     
     // Step 8: Calculate statistics
     let mut result = StarDetectionResult {
         average_hfr: 0.0,
-        detected_stars,
         hfr_std_dev: 0.0,
         star_list,
     };
@@ -344,7 +328,7 @@ fn identify_stars(
     let mut sum_squares = 0.0;
     
     let mut size_filtered = 0;
-    let mut roi_filtered = 0;
+    let roi_filtered = 0;
     let mut failed_detection = 0;
     let mut edge_filtered = 0;
     
@@ -503,7 +487,6 @@ fn identify_stars(
             average_brightness: s.average,
             max_brightness: s.max_pixel_value,
             background: s.surrounding_mean,
-            bounding_box: s.rectangle,
         })
         .collect();
     

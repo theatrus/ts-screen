@@ -28,12 +28,14 @@ pub struct StarDetection {
     pub fwhm: f64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct Blob {
     pub bounds: BoundingBox,
     pub pixels: Vec<(usize, usize)>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct BoundingBox {
     pub x: usize,
@@ -50,6 +52,7 @@ pub struct FitsImage {
     pub data: Vec<u16>, // Keep as 16-bit unsigned integers
 }
 
+#[allow(dead_code)]
 impl FitsImage {
     /// Load FITS image data from file using fitrs
     pub fn from_file(path: &Path) -> Result<Self> {

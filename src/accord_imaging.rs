@@ -3,16 +3,6 @@
 
 // Remove unused imports
 
-/// Utility functions matching N.I.N.A.'s ImageUtility class
-pub struct ImageUtility;
-
-impl ImageUtility {
-    /// Convert 16-bit grayscale to 8-bit grayscale
-    /// Matches Accord.Imaging.Image.Convert16bppTo8bpp: *d = (byte)(*s >> 8)
-    pub fn convert_16bpp_to_8bpp(data_16bit: &[u16]) -> Vec<u8> {
-        data_16bit.iter().map(|&val| (val >> 8) as u8).collect()
-    }
-}
 
 /// Detection utility functions
 pub struct DetectionUtility;
@@ -48,76 +38,6 @@ fn resize_bicubic_image_crate(image: &[u8], width: usize, height: usize, new_wid
     
     // Convert back to Vec<u8>
     resized.into_raw()
-}
-
-/// Resize using bicubic interpolation
-pub struct ResizeBicubic {
-    new_width: usize,
-    new_height: usize,
-}
-
-impl ResizeBicubic {
-    pub fn new(new_width: usize, new_height: usize) -> Self {
-        Self { new_width, new_height }
-    }
-    
-    pub fn apply(&self, image: &[u8], width: usize, height: usize) -> Vec<u8> {
-        let mut result = vec![0u8; self.new_width * self.new_height];
-        
-        let x_ratio = width as f64 / self.new_width as f64;
-        let y_ratio = height as f64 / self.new_height as f64;
-        
-        for new_y in 0..self.new_height {
-            for new_x in 0..self.new_width {
-                let src_x = new_x as f64 * x_ratio;
-                let src_y = new_y as f64 * y_ratio;
-                
-                // Bicubic interpolation
-                let pixel_value = self.bicubic_interpolate(image, width, height, src_x, src_y);
-                result[new_y * self.new_width + new_x] = pixel_value;
-            }
-        }
-        
-        result
-    }
-    
-    fn bicubic_interpolate(&self, image: &[u8], width: usize, height: usize, x: f64, y: f64) -> u8 {
-        // Mitchell-Netravali cubic filter with a = -0.5 (as per Wikipedia bicubic)
-        let x0 = x.floor() as i32;
-        let y0 = y.floor() as i32;
-        let fx = x - x0 as f64;
-        let fy = y - y0 as f64;
-        
-        let mut sum = 0.0;
-        
-        for j in -1..=2 {
-            for i in -1..=2 {
-                let px = (x0 + i).clamp(0, width as i32 - 1) as usize;
-                let py = (y0 + j).clamp(0, height as i32 - 1) as usize;
-                
-                let wx = self.cubic_weight((i as f64 - fx).abs());
-                let wy = self.cubic_weight((j as f64 - fy).abs());
-                
-                sum += image[py * width + px] as f64 * wx * wy;
-            }
-        }
-        
-        sum.round().clamp(0.0, 255.0) as u8
-    }
-    
-    fn cubic_weight(&self, x: f64) -> f64 {
-        // Mitchell-Netravali cubic filter with a = -0.5
-        let a = -0.5;
-        let x_abs = x.abs();
-        
-        if x_abs <= 1.0 {
-            (a + 2.0) * x_abs.powi(3) - (a + 3.0) * x_abs.powi(2) + 1.0
-        } else if x_abs < 2.0 {
-            a * x_abs.powi(3) - 5.0 * a * x_abs.powi(2) + 8.0 * a * x_abs - 4.0 * a
-        } else {
-            0.0
-        }
-    }
 }
 
 /// Canny edge detector implementation
@@ -172,47 +92,11 @@ impl CannyEdgeDetector {
     }
 }
 
-/// Canny edge detector without Gaussian blur
-pub struct NoBlurCannyEdgeDetector {
-    low_threshold: u8,
-    high_threshold: u8,
-}
-
-impl NoBlurCannyEdgeDetector {
-    pub fn new(low_threshold: u8, high_threshold: u8) -> Self {
-        Self {
-            low_threshold,
-            high_threshold,
-        }
-    }
-
-    pub fn apply_in_place(&self, image: &mut [u8], width: usize, height: usize) {
-        // Calculate gradients without blur
-        let (gradients, orientations) = calculate_gradients(image, width, height);
-        
-        // Non-maximum suppression
-        let suppressed = non_maximum_suppression(&gradients, &orientations, width, height);
-        
-        // Double thresholding and edge tracking
-        let edges = hysteresis_thresholding(&suppressed, width, height, self.low_threshold, self.high_threshold);
-        
-        // Copy result back to original image
-        image.copy_from_slice(&edges);
-    }
-}
 
 /// SIS (Simple Image Statistics) threshold
 pub struct SISThreshold;
 
 impl SISThreshold {
-    pub fn new() -> Self {
-        Self
-    }
-    
-    pub fn calculate_threshold(&self, image: &[u8], width: usize, height: usize) -> u8 {
-        calculate_sis_threshold(image, width, height)
-    }
-    
     pub fn apply_in_place(&self, image: &mut [u8], width: usize, height: usize) {
         // Calculate threshold using SIS algorithm
         let threshold = calculate_sis_threshold(image, width, height);
@@ -264,8 +148,6 @@ impl BinaryDilation3x3 {
 #[derive(Debug, Clone)]
 pub struct Blob {
     pub rectangle: Rectangle,
-    pub id: u32,
-    pub area: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -363,7 +245,7 @@ impl BlobCounter {
         }
         
         // Create blob objects
-        for (id, (min_x, min_y, max_x, max_y, area)) in blob_info {
+        for (_id, (min_x, min_y, max_x, max_y, _area)) in blob_info {
             self.blobs.push(Blob {
                 rectangle: Rectangle {
                     x: min_x,
@@ -371,8 +253,6 @@ impl BlobCounter {
                     width: max_x - min_x + 1,
                     height: max_y - min_y + 1,
                 },
-                id,
-                area,
             });
         }
     }
@@ -381,10 +261,6 @@ impl BlobCounter {
         self.blobs.clone()
     }
 
-    pub fn get_blobs_edge_points(&self, _blob: &Blob) -> Vec<(i32, i32)> {
-        // Simplified - return corners for now
-        vec![]
-    }
 }
 
 /// Simple shape checker for circle detection
@@ -436,6 +312,7 @@ impl SimpleShapeChecker {
 
 /// Fast Gaussian blur implementation
 pub struct FastGaussianBlur {
+    #[allow(dead_code)]
     radius: i32,
 }
 
@@ -742,16 +619,16 @@ mod tests {
         let dilation = BinaryDilation3x3;
         dilation.apply_in_place(&mut image, 5, 5);
         
-        // Check that dilation expanded the single pixel
-        assert_eq!(image[1 * 5 + 1], 255); // top-left
-        assert_eq!(image[1 * 5 + 2], 255); // top
-        assert_eq!(image[1 * 5 + 3], 255); // top-right
-        assert_eq!(image[2 * 5 + 1], 255); // left
-        assert_eq!(image[2 * 5 + 2], 255); // center
-        assert_eq!(image[2 * 5 + 3], 255); // right
-        assert_eq!(image[3 * 5 + 1], 255); // bottom-left
-        assert_eq!(image[3 * 5 + 2], 255); // bottom
-        assert_eq!(image[3 * 5 + 3], 255); // bottom-right
+        // Original pixel at row 1, col 2 - Check that dilation expanded to 3x3 region
+        assert_eq!(image[0 * 5 + 1], 255); // top-left
+        assert_eq!(image[0 * 5 + 2], 255); // top
+        assert_eq!(image[0 * 5 + 3], 255); // top-right
+        assert_eq!(image[1 * 5 + 1], 255); // left
+        assert_eq!(image[1 * 5 + 2], 255); // center (original)
+        assert_eq!(image[1 * 5 + 3], 255); // right
+        assert_eq!(image[2 * 5 + 1], 255); // bottom-left
+        assert_eq!(image[2 * 5 + 2], 255); // bottom
+        assert_eq!(image[2 * 5 + 3], 255); // bottom-right
     }
 
     #[test]
@@ -793,7 +670,6 @@ mod tests {
         for blob in blobs {
             assert_eq!(blob.rectangle.width, 2);
             assert_eq!(blob.rectangle.height, 2);
-            assert_eq!(blob.area, 4);
         }
     }
 }

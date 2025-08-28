@@ -16,6 +16,10 @@ categories = ["command-line-utilities", "science"]
 name = "psf_guard"
 path = "src/lib.rs"
 
+[[bin]]
+name = "compare_star_detectors"
+path = "compare_star_detectors.rs"
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 rusqlite = { version = "0.37", features = ["bundled"] }
