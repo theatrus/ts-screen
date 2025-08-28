@@ -1,5 +1,9 @@
 use anyhow::{Context, Result};
 use image::{ImageBuffer, Luma};
+use image::codecs::png::{PngEncoder, CompressionType, FilterType};
+use image::{ColorType, ImageEncoder};
+use std::fs::File;
+use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 
 use crate::image_analysis::FitsImage;
@@ -58,10 +62,25 @@ pub fn stretch_to_png(
     )
     .context("Failed to create image buffer")?;
 
-    // Save PNG
-    img_buffer
-        .save(&output_path)
-        .with_context(|| format!("Failed to save PNG to: {}", output_path.display()))?;
+    // Save PNG with compression
+    let file = File::create(&output_path)
+        .with_context(|| format!("Failed to create output file: {}", output_path.display()))?;
+    let writer = BufWriter::new(file);
+    
+    // Create PNG encoder with best compression
+    let encoder = PngEncoder::new_with_quality(
+        writer,
+        CompressionType::Best,
+        FilterType::Adaptive
+    );
+    
+    // Write the image data
+    encoder.write_image(
+        &img_buffer,
+        image.width as u32,
+        image.height as u32,
+        ColorType::L8.into()
+    ).with_context(|| format!("Failed to write PNG image to {}", output_path.display()))?;
 
     println!("Saved stretched image to: {}", output_path.display());
     Ok(())

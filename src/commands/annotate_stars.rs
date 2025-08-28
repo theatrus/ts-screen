@@ -1,6 +1,10 @@
 use anyhow::{Context, Result};
 use image::{ImageBuffer, Rgb};
+use image::codecs::png::{PngEncoder, CompressionType, FilterType};
+use image::{ColorType, ImageEncoder};
 use imageproc::drawing::{draw_hollow_circle_mut, draw_filled_circle_mut};
+use std::fs::File;
+use std::io::BufWriter;
 use std::path::Path;
 
 use crate::image_analysis::FitsImage;
@@ -177,9 +181,25 @@ pub fn annotate_stars(
         format!("{}_annotated.png", base)
     });
 
-    // Save the annotated image
-    rgb_image.save(&output_path)
-        .with_context(|| format!("Failed to save annotated image to {}", output_path))?;
+    // Save the annotated image with compression
+    let file = File::create(&output_path)
+        .with_context(|| format!("Failed to create output file: {}", output_path))?;
+    let writer = BufWriter::new(file);
+    
+    // Create PNG encoder with best compression
+    let encoder = PngEncoder::new_with_quality(
+        writer,
+        CompressionType::Best,
+        FilterType::Adaptive
+    );
+    
+    // Write the image data
+    encoder.write_image(
+        &rgb_image,
+        width as u32,
+        height as u32,
+        ColorType::Rgb8.into()
+    ).with_context(|| format!("Failed to write PNG image to {}", output_path))?;
 
     println!("Created annotated image: {}", output_path);
     println!("Annotated {} stars out of {} detected", stars_to_annotate.len(), total_stars);
