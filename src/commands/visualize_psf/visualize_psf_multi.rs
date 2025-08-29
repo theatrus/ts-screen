@@ -108,6 +108,7 @@ pub fn visualize_psf_multi(
     let strategy = match selection_mode {
         "regions" => SelectionStrategy::FiveRegions { per_region: (num_stars + 4) / 5 },
         "quality" => SelectionStrategy::QualityRange { per_tier: (num_stars + 3) / 4 },
+        "corners" => SelectionStrategy::Corners,
         _ => SelectionStrategy::TopN { n: num_stars, metric: sort_metric },
     };
     
@@ -121,10 +122,15 @@ pub fn visualize_psf_multi(
         eprintln!("Showing {} stars sorted by {}", stars_to_show.len(), sort_by);
     }
 
-    // Calculate layout
-    let panel_size = 256; // Size for each star's panels
-    let panel_spacing = 20;
-    let num_rows = (stars_to_show.len() + grid_cols - 1) / grid_cols;
+    // Calculate square grid layout
+    let num_stars_actual = stars_to_show.len();
+    let grid_size = (num_stars_actual as f64).sqrt().ceil() as usize;
+    let grid_cols = if selection_mode == "corners" && grid_cols != 3 { 3 } else { grid_size };
+    let num_rows = (num_stars_actual + grid_cols - 1) / grid_cols;
+    
+    // Panel dimensions
+    let panel_size = 200; // Smaller panels for better fit
+    let panel_spacing = 15;
     
     // Each star gets 3 panels (observed, fitted, residual)
     let star_panel_width = panel_size * 3 + panel_spacing * 2;
@@ -134,10 +140,10 @@ pub fn visualize_psf_multi(
     let total_width = grid_cols * star_panel_width + (grid_cols - 1) * panel_spacing + 40;
     let total_height = num_rows * star_panel_height + (num_rows - 1) * panel_spacing + 40;
     
-    // Add space for location map
-    let map_size = 300;
+    // Add space for larger location map
+    let map_size = 600; // Larger minimap
     let final_width = total_width.max(map_size + 80);
-    let final_height = total_height + map_size + 60;
+    let final_height = total_height + map_size + 80;
     
     let mut img = ImageBuffer::<Rgba<u8>, Vec<u8>>::new(final_width as u32, final_height as u32);
     
@@ -364,15 +370,15 @@ pub fn visualize_psf_multi(
             }
         }
         
-        // Add star number
+        // Add star number - offset to the side to not cover the circle
         let star_num = format!("{}", idx + 1);
         draw_text_with_bg(
             &mut img,
-            (map_x as i32 + map_star_x - 10) as u32,
-            (map_y as i32 + map_star_y - 10) as u32,
+            (map_x as i32 + map_star_x + 8) as u32,  // Offset to the right
+            (map_y as i32 + map_star_y - 12) as u32, // Slightly above
             &star_num,
             Rgba([255, 255, 255, 255]),
-            Rgba([255, 0, 0, 255]),
+            Rgba([0, 0, 0, 200]),  // Semi-transparent background
             2
         );
     }

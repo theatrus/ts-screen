@@ -9,6 +9,8 @@ pub enum SelectionStrategy {
     FiveRegions { per_region: usize },
     /// Stars with diverse quality scores
     QualityRange { per_tier: usize },
+    /// Stars from corners and edges (9 positions: 4 corners + 4 edges + center)
+    Corners,
     /// Custom selection based on criteria
     Custom { min_hfr: Option<f64>, max_hfr: Option<f64>, min_r2: Option<f64> },
 }
@@ -35,6 +37,9 @@ pub fn select_stars(
         }
         SelectionStrategy::QualityRange { per_tier } => {
             select_quality_range(stars, *per_tier)
+        }
+        SelectionStrategy::Corners => {
+            select_corners(stars, image_width, image_height)
         }
         SelectionStrategy::Custom { min_hfr, max_hfr, min_r2 } => {
             select_custom(stars, *min_hfr, *max_hfr, *min_r2)
@@ -167,6 +172,82 @@ fn select_quality_range(stars: Vec<HocusFocusStar>, per_tier: usize) -> Vec<Hocu
             .collect();
         selected.extend(additional);
     }
+    
+    selected
+}
+
+fn select_corners(
+    stars: Vec<HocusFocusStar>,
+    image_width: usize,
+    image_height: usize,
+) -> Vec<HocusFocusStar> {
+    // Define 9 regions for 3x3 grid
+    let margin = 0.15; // Use 15% margin from edges
+    let x_min = image_width as f64 * margin;
+    let x_max = image_width as f64 * (1.0 - margin);
+    let y_min = image_height as f64 * margin;
+    let y_max = image_height as f64 * (1.0 - margin);
+    
+    let x_mid = image_width as f64 / 2.0;
+    let y_mid = image_height as f64 / 2.0;
+    
+    // Define 9 target regions with their centers
+    let regions = [
+        // Top row
+        (x_min, y_min, "top-left"),
+        (x_mid, y_min, "top-center"),
+        (x_max, y_min, "top-right"),
+        // Middle row
+        (x_min, y_mid, "mid-left"),
+        (x_mid, y_mid, "center"),
+        (x_max, y_mid, "mid-right"),
+        // Bottom row
+        (x_min, y_max, "bottom-left"),
+        (x_mid, y_max, "bottom-center"),
+        (x_max, y_max, "bottom-right"),
+    ];
+    
+    let mut selected = Vec::new();
+    
+    // For each region, find the closest star with good HFR
+    for (target_x, target_y, _name) in &regions {
+        // Find best star closest to this position
+        let best_star = stars.iter()
+            .filter(|s| {
+                // Only consider stars with reasonable HFR
+                s.hfr > 1.0 && s.hfr < 10.0
+            })
+            .min_by(|a, b| {
+                // Calculate distances to target position
+                let dist_a = ((a.position.0 - target_x).powi(2) + (a.position.1 - target_y).powi(2)).sqrt();
+                let dist_b = ((b.position.0 - target_x).powi(2) + (b.position.1 - target_y).powi(2)).sqrt();
+                
+                // Sort by distance first, then by HFR if distances are similar
+                if (dist_a - dist_b).abs() < 50.0 {
+                    a.hfr.partial_cmp(&b.hfr).unwrap()
+                } else {
+                    dist_a.partial_cmp(&dist_b).unwrap()
+                }
+            });
+        
+        if let Some(star) = best_star {
+            // Avoid duplicates
+            if !selected.iter().any(|s: &HocusFocusStar| s.position == star.position) {
+                selected.push(star.clone());
+            }
+        }
+    }
+    
+    // Sort by position (top to bottom, left to right) for consistent ordering
+    selected.sort_by(|a, b| {
+        if (a.position.1 - b.position.1).abs() < 100.0 {
+            // Same row, sort by X
+            a.position.0.partial_cmp(&b.position.0).unwrap()
+        } else {
+            // Different rows, sort by Y
+            a.position.1.partial_cmp(&b.position.1).unwrap()
+        }
+    });
     
     selected
 }

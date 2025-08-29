@@ -258,7 +258,7 @@ pub enum Commands {
         #[arg(long, default_value = "9")]
         max_stars: usize,
 
-        /// Star selection mode (top, regions, quality)
+        /// Star selection mode (top, regions, quality, corners)
         #[arg(long, default_value = "top")]
         selection_mode: String,
 
@@ -296,8 +296,8 @@ pub enum Commands {
         #[arg(long, default_value = "5")]
         grid_cols: usize,
 
-        /// Star selection mode (top, regions, quality)
-        #[arg(long, default_value = "regions")]
+        /// Star selection mode (top, regions, quality, corners)
+        #[arg(long, default_value = "corners")]
         selection_mode: String,
 
         /// Enable verbose debug output
