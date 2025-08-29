@@ -554,3 +554,193 @@ HocusFocus                     |       93 |      2.812 |      0.387
 ```
 
 HocusFocus always attempts OpenCV operations first with automatic fallback to pure Rust implementations if OpenCV fails.
+
+## Enhanced PSF Fitting and Analysis (2025-08-29)
+
+### PSF Fitting Implementation
+
+Added comprehensive Point Spread Function (PSF) fitting capabilities:
+
+1. **PSF Models** (src/psf_fitting.rs)
+   - Gaussian PSF model
+   - Moffat PSF with beta=4.0 (better for atmospheric seeing)
+   - Levenberg-Marquardt optimizer for non-linear least squares fitting
+   - Sub-pixel bilinear interpolation for accurate measurements
+
+2. **Key Features**
+   - ROI extraction with configurable size (default 32x32 pixels)
+   - Sub-pixel sampling (0.5 pixel spacing)
+   - Automatic bounds enforcement for stable fitting
+   - R² and RMSE goodness-of-fit metrics
+   - FWHM and eccentricity calculations
+
+3. **Integration**
+   - HocusFocus star detector enhanced with PSF fitting option
+   - PSF parameters available in star detection results
+   - Used for more accurate FWHM measurements than simple HFR
+
+### New Commands and Features
+
+#### 1. analyze-fits Command
+Comprehensive FITS analysis with star detection comparison:
+
+```bash
+# Basic usage
+psf-guard analyze-fits image.fits
+
+# Compare all detectors
+psf-guard analyze-fits image.fits --compare-all
+
+# Specific detector with PSF fitting
+psf-guard analyze-fits image.fits --detector hocusfocus --psf-type moffat
+
+# Directory analysis
+psf-guard analyze-fits /path/to/fits/directory --format csv
+```
+
+Features:
+- Compare NINA (normal/high/highest) vs HocusFocus detectors
+- Database comparison with N.I.N.A. metadata
+- Multiple output formats (table, json, csv)
+- PSF fitting options (none, gaussian, moffat)
+
+#### 2. stretch-to-png Command
+Convert FITS to PNG with MTF stretching:
+
+```bash
+# Basic MTF stretch
+psf-guard stretch-to-png image.fits
+
+# Custom parameters
+psf-guard stretch-to-png image.fits -o output.png --midtone 0.3 --shadow 0.001
+
+# Logarithmic stretch with invert
+psf-guard stretch-to-png image.fits --logarithmic --invert
+```
+
+#### 3. annotate-stars Command
+Create annotated PNG images showing detected stars:
+
+```bash
+# Basic annotation
+psf-guard annotate-stars image.fits
+
+# Custom settings
+psf-guard annotate-stars image.fits --max-stars 100 --color yellow --detector nina --sensitivity high
+
+# With PSF fitting
+psf-guard annotate-stars image.fits --psf-type moffat --verbose
+```
+
+Features:
+- Circle annotations sized by HFR
+- Customizable colors (red, green, blue, yellow, cyan, magenta, white)
+- Top N stars by HFR quality
+- Verbose mode shows star positions and HFR values
+
+#### 4. visualize-psf Commands
+Advanced PSF residual visualization:
+
+```bash
+# Single star visualization
+psf-guard visualize-psf image.fits --star-index 0 --psf-type moffat
+
+# Multi-star grid visualization
+psf-guard visualize-psf-multi image.fits --num-stars 25 --psf-type gaussian
+
+# Selection strategies
+psf-guard visualize-psf-multi image.fits --selection corners  # 9-point grid
+psf-guard visualize-psf-multi image.fits --selection regions  # 5 regions
+psf-guard visualize-psf-multi image.fits --selection quality  # Quality tiers
+
+# Custom grid layout
+psf-guard visualize-psf-multi image.fits --grid-cols 5 --sort-by r2
+```
+
+Features:
+- Side-by-side observed/fitted/residual panels
+- Multiple selection strategies (top-n, corners, regions, quality)
+- Star location minimap with numbered markers
+- Automatic square grid layout
+- Sort by HFR, R², or brightness
+- Detailed PSF metrics display
+
+#### 5. benchmark-psf Command
+Performance benchmarking for PSF fitting:
+
+```bash
+# Basic benchmark
+psf-guard benchmark-psf image.fits
+
+# Multiple runs for averaging
+psf-guard benchmark-psf image.fits --runs 10 --verbose
+```
+
+Output includes:
+- Detection times per method (HFR only, Gaussian, Moffat)
+- Time per star metrics
+- PSF fit success rates
+- R² and FWHM statistics
+
+### Visualization Improvements
+
+1. **Enhanced Minimap**
+   - Larger 600x600 pixel size for better visibility
+   - Numbered star markers corresponding to grid positions
+   - Clear position indicators
+   - Shows all detected stars with selected ones highlighted
+
+2. **Grid Layout**
+   - Automatic square grid calculation
+   - Special handling for corners mode (3x3 grid)
+   - Consistent star numbering based on position
+   - Better spacing and panel organization
+
+3. **Residual Visualization**
+   - Red-white-blue colormap for residuals
+   - Normalized display ranges
+   - Clear panel labels
+   - PSF parameter display (FWHM, R², eccentricity)
+
+### Code Quality Improvements (2025-08-29)
+
+Fixed all cargo clippy warnings:
+
+1. **Code Style**
+   - Changed `HFR` enum to `Hfr` (upper-case acronym rule)
+   - Used `.clamp()` instead of manual min/max
+   - Used `.div_ceil()` for ceiling division
+   - Added type alias `ResidualMaps` for complex return types
+
+2. **Best Practices**
+   - Proper struct initialization syntax
+   - Removed unnecessary `mut` declarations
+   - Added `#[allow(clippy::too_many_arguments)]` where appropriate
+   - Added `#[allow(dead_code)]` for unused but planned features
+
+3. **Performance**
+   - More efficient integer operations
+   - Better memory usage patterns
+   - Cleaner code generation
+
+### Command Line Examples
+
+```bash
+# Analyze and compare all detectors
+psf-guard analyze-fits my_image.fits --compare-all
+
+# Create annotated PNG with top 50 stars in yellow
+psf-guard annotate-stars my_image.fits --max-stars 50 --color yellow --verbose
+
+# Visualize PSF fitting for 25 stars in a 5x5 grid
+psf-guard visualize-psf-multi my_image.fits --num-stars 25 --psf-type moffat
+
+# Show 9-point corner grid with Gaussian PSF
+psf-guard visualize-psf-multi my_image.fits --selection corners --psf-type gaussian
+
+# Benchmark PSF fitting performance
+psf-guard benchmark-psf my_image.fits --runs 5 --verbose
+
+# Convert FITS to PNG with custom stretch
+psf-guard stretch-to-png my_image.fits --midtone 0.25 --shadow 0.002 -o stretched.png
+```
