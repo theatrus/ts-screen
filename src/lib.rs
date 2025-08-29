@@ -15,6 +15,7 @@ pub mod opencv_morphology;
 #[cfg(feature = "opencv")]
 pub mod opencv_utils;
 pub mod opencv_wavelets;
+pub mod psf_fitting;
 pub mod utils;
 
 #[cfg(test)]

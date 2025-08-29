@@ -160,6 +160,10 @@ pub enum Commands {
         #[arg(long)]
         compare_all: bool,
 
+        /// PSF fitting type (none, gaussian, moffat4)
+        #[arg(long, default_value = "none")]
+        psf_type: String,
+
         /// Enable verbose debug output
         #[arg(long, short)]
         verbose: bool,
@@ -223,6 +227,36 @@ pub enum Commands {
         /// Color for star annotations (red, green, blue, yellow, cyan, magenta, white)
         #[arg(long, default_value = "red")]
         annotation_color: String,
+
+        /// PSF fitting type (none, gaussian, moffat4)
+        #[arg(long, default_value = "none")]
+        psf_type: String,
+
+        /// Enable verbose debug output
+        #[arg(long, short)]
+        verbose: bool,
+    },
+
+    /// Visualize PSF fit residuals for detected stars
+    VisualizePsf {
+        /// Path to FITS file
+        fits_path: String,
+
+        /// Output PNG path (if not provided, uses FITS filename with _psf_residuals.png suffix)
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// Star index to visualize (0-based, default: 0 for best star)
+        #[arg(long)]
+        star_index: Option<usize>,
+
+        /// PSF fitting type (gaussian or moffat4)
+        #[arg(long, default_value = "moffat4")]
+        psf_type: String,
+
+        /// Maximum number of stars to consider (default: 20)
+        #[arg(long, default_value = "20")]
+        max_stars: usize,
 
         /// Enable verbose debug output
         #[arg(long, short)]

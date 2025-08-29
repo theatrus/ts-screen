@@ -9,6 +9,7 @@
 /// - Multi-criteria star validation
 use crate::opencv_morphology::OpenCVMorphology;
 use crate::opencv_wavelets::WaveletStructureRemover;
+use crate::psf_fitting::{PSFModel, PSFType};
 
 /// Star detection parameters for HocusFocus algorithm
 #[derive(Debug, Clone)]
@@ -35,6 +36,9 @@ pub struct HocusFocusParams {
     pub star_center_tolerance: f64, // Fraction of box size for center tolerance
     pub saturation_threshold: f64, // ADU value for saturation
     pub min_hfr: f64,        // Minimum HFR threshold
+    
+    // PSF fitting
+    pub psf_type: PSFType, // PSF model type to fit (None, Gaussian, Moffat4)
 }
 
 impl Default for HocusFocusParams {
@@ -57,6 +61,7 @@ impl Default for HocusFocusParams {
             star_center_tolerance: 0.3,           // 30% - actual default
             saturation_threshold: 65535.0 * 0.99, // 99% of max
             min_hfr: 1.5,                         // Actual default
+            psf_type: PSFType::None,              // No PSF fitting by default
         }
     }
 }
@@ -72,6 +77,7 @@ pub struct HocusFocusStar {
     pub snr: f64, // Signal-to-noise ratio
     pub flux: f64,
     pub pixel_count: usize,
+    pub psf_model: Option<PSFModel>, // PSF fitting results
 }
 
 /// Star detection result
@@ -703,15 +709,42 @@ fn measure_stars(
             continue;
         }
 
+        // PSF fitting if requested
+        let psf_model = if params.psf_type != PSFType::None {
+            use crate::psf_fitting::PSFFitter;
+            let fitter = PSFFitter::new(params.psf_type);
+            fitter.fit_star(
+                data,
+                width,
+                height,
+                candidate.center.0,
+                candidate.center.1,
+                candidate.bounding_box.2 as f64,
+                candidate.bounding_box.3 as f64,
+                background,
+                peak,
+            )
+        } else {
+            None
+        };
+        
+        // Use PSF-derived FWHM if available
+        let final_fwhm = if let Some(ref psf) = psf_model {
+            psf.fwhm
+        } else {
+            fwhm
+        };
+
         stars.push(HocusFocusStar {
             position: candidate.center,
             hfr,
-            fwhm,
+            fwhm: final_fwhm,
             brightness: peak,
             background,
             snr,
             flux,
             pixel_count: candidate.pixels.len(),
+            psf_model,
         });
     }
 

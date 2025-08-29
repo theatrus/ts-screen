@@ -13,6 +13,7 @@ use crate::mtf_stretch::{stretch_image, StretchParameters};
 use crate::nina_star_detection::{
     detect_stars_with_original, StarDetectionParams, StarSensitivity,
 };
+use crate::psf_fitting::PSFType;
 
 /// Convert a color name to RGB values
 fn parse_color(color_name: &str) -> Rgb<u8> {
@@ -39,6 +40,7 @@ pub fn annotate_stars(
     midtone_factor: f64,
     shadow_clipping: f64,
     annotation_color: &str,
+    psf_type: &str,
     verbose: bool,
 ) -> Result<()> {
     if verbose {
@@ -125,7 +127,14 @@ pub fn annotate_stars(
                 eprintln!("Using HocusFocus star detection");
             }
 
-            let params = HocusFocusParams::default();
+            let mut params = HocusFocusParams::default();
+            
+            // Parse PSF type
+            params.psf_type = psf_type.parse().unwrap_or(PSFType::None);
+            if params.psf_type != PSFType::None && verbose {
+                eprintln!("  PSF Fitting: {:?}", params.psf_type);
+            }
+            
             let result = detect_stars_hocus_focus(&fits.data, width, height, &params);
             let stars = result.stars;
 

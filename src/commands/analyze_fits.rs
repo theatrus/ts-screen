@@ -4,6 +4,7 @@ use crate::mtf_stretch::{stretch_image, StretchParameters};
 use crate::nina_star_detection::{
     detect_stars_with_original, NoiseReduction, StarDetectionParams, StarSensitivity,
 };
+use crate::psf_fitting::PSFType;
 use anyhow::Result;
 use rusqlite::Connection;
 use serde::Deserialize;
@@ -37,6 +38,7 @@ pub fn analyze_fits_and_compare(
     sensitivity: &str,
     apply_stretch: bool,
     compare_all: bool,
+    psf_type: &str,
     _verbose: bool,
 ) -> Result<()> {
     let fits_path = Path::new(fits_path);
@@ -61,6 +63,7 @@ pub fn analyze_fits_and_compare(
                 detector,
                 sensitivity,
                 apply_stretch,
+                psf_type,
             )?;
         } else if fits_path.is_dir() {
             analyze_fits_directory(
@@ -70,6 +73,7 @@ pub fn analyze_fits_and_compare(
                 detector,
                 sensitivity,
                 apply_stretch,
+                psf_type,
             )?;
         } else {
             return Err(anyhow::anyhow!(
@@ -303,6 +307,7 @@ fn analyze_single_fits(
     detector: &str,
     sensitivity: &str,
     apply_stretch: bool,
+    psf_type: &str,
 ) -> Result<()> {
     let filename = fits_path
         .file_name()
@@ -317,7 +322,7 @@ fn analyze_single_fits(
 
     // Perform star detection
     let (star_count, avg_hfr, hfr_std, detection_info) =
-        detect_stars(&fits, &computed_stats, detector, sensitivity, apply_stretch)?;
+        detect_stars(&fits, &computed_stats, detector, sensitivity, apply_stretch, psf_type)?;
 
     // Look for matching database entries
     let db_info = get_database_info(conn, filename)?;
@@ -362,6 +367,7 @@ fn analyze_fits_directory(
     detector: &str,
     sensitivity: &str,
     apply_stretch: bool,
+    psf_type: &str,
 ) -> Result<()> {
     let mut fits_files = Vec::new();
 
@@ -404,6 +410,7 @@ fn analyze_fits_directory(
             detector,
             sensitivity,
             apply_stretch,
+            psf_type,
         ) {
             eprintln!("Error analyzing {}: {}", fits_path.display(), e);
         }
@@ -418,6 +425,7 @@ fn detect_stars(
     detector: &str,
     sensitivity: &str,
     apply_stretch: bool,
+    psf_type: &str,
 ) -> Result<(usize, f64, f64, String)> {
     let detection_info;
 
@@ -471,7 +479,13 @@ fn detect_stars(
         "hocusfocus" => {
             println!("  Using OpenCV with automatic fallback");
 
-            let params = HocusFocusParams::default();
+            let mut params = HocusFocusParams::default();
+            
+            // Parse PSF type
+            params.psf_type = psf_type.parse().unwrap_or(PSFType::None);
+            if params.psf_type != PSFType::None {
+                println!("  PSF Fitting: {:?}", params.psf_type);
+            }
 
             let detection_data = if apply_stretch {
                 let stretch_params = StretchParameters::default();

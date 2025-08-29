@@ -6,7 +6,7 @@ use psf_guard::cli::{Cli, Commands};
 use psf_guard::commands::{
     analyze_fits_and_compare, annotate_stars, dump_grading_results, filter_rejected_files,
     list_projects, list_targets, read_fits, regrade_images, show_images, stretch_to_png,
-    update_grade,
+    update_grade, visualize_psf_residuals,
 };
 
 fn main() -> Result<()> {
@@ -88,6 +88,7 @@ fn main() -> Result<()> {
             sensitivity,
             apply_stretch,
             compare_all,
+            psf_type,
             verbose,
         } => {
             let conn = Connection::open(&cli.database)
@@ -102,6 +103,7 @@ fn main() -> Result<()> {
                 &sensitivity,
                 apply_stretch,
                 compare_all,
+                &psf_type,
                 verbose,
             )?;
         }
@@ -131,6 +133,7 @@ fn main() -> Result<()> {
             midtone_factor,
             shadow_clipping,
             annotation_color,
+            psf_type,
             verbose,
         } => {
             annotate_stars(
@@ -142,6 +145,24 @@ fn main() -> Result<()> {
                 midtone_factor,
                 shadow_clipping,
                 &annotation_color,
+                &psf_type,
+                verbose,
+            )?;
+        }
+        Commands::VisualizePsf {
+            fits_path,
+            output,
+            star_index,
+            psf_type,
+            max_stars,
+            verbose,
+        } => {
+            visualize_psf_residuals(
+                &fits_path,
+                output,
+                star_index,
+                &psf_type,
+                max_stars,
                 verbose,
             )?;
         }
