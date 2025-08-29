@@ -61,6 +61,10 @@ pub enum Commands {
         #[arg(short, long)]
         target: Option<String>,
 
+        /// Enable verbose output for debugging path issues
+        #[arg(short, long)]
+        verbose: bool,
+
         #[command(flatten)]
         stat_options: StatisticalOptions,
     },

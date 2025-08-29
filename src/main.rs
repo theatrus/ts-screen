@@ -39,13 +39,22 @@ fn main() -> Result<()> {
             dry_run,
             project,
             target,
+            verbose,
             stat_options,
         } => {
             let conn = Connection::open(&database)
                 .with_context(|| format!("Failed to open database: {}", database))?;
 
             let stat_config = stat_options.to_grading_config();
-            filter_rejected_files(&conn, &base_dir, dry_run, project, target, stat_config)?;
+            filter_rejected_files(
+                &conn,
+                &base_dir,
+                dry_run,
+                project,
+                target,
+                stat_config,
+                verbose,
+            )?;
         }
         Commands::Regrade {
             database,
