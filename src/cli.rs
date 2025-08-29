@@ -262,6 +262,20 @@ pub enum Commands {
         #[arg(long, short)]
         verbose: bool,
     },
+
+    /// Benchmark PSF fitting performance
+    BenchmarkPsf {
+        /// Path to FITS file
+        fits_path: String,
+
+        /// Number of runs for averaging (default: 5)
+        #[arg(long, default_value = "5")]
+        runs: usize,
+
+        /// Enable verbose debug output
+        #[arg(long, short)]
+        verbose: bool,
+    },
 }
 
 #[derive(Parser, Debug, Clone)]

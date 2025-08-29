@@ -4,9 +4,9 @@ use rusqlite::Connection;
 
 use psf_guard::cli::{Cli, Commands};
 use psf_guard::commands::{
-    analyze_fits_and_compare, annotate_stars, dump_grading_results, filter_rejected_files,
-    list_projects, list_targets, read_fits, regrade_images, show_images, stretch_to_png,
-    update_grade, visualize_psf_residuals,
+    analyze_fits_and_compare, annotate_stars, benchmark_psf, dump_grading_results, 
+    filter_rejected_files, list_projects, list_targets, read_fits, regrade_images, 
+    show_images, stretch_to_png, update_grade, visualize_psf_residuals,
 };
 
 fn main() -> Result<()> {
@@ -165,6 +165,13 @@ fn main() -> Result<()> {
                 max_stars,
                 verbose,
             )?;
+        }
+        Commands::BenchmarkPsf {
+            fits_path,
+            runs,
+            verbose,
+        } => {
+            benchmark_psf(&fits_path, runs, verbose)?;
         }
     }
 

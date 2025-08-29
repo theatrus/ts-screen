@@ -1,5 +1,6 @@
 pub mod analyze_fits;
 pub mod annotate_stars;
+pub mod benchmark_psf;
 pub mod dump_grading;
 pub mod filter_rejected;
 pub mod list_projects;
@@ -13,6 +14,7 @@ pub mod visualize_psf;
 
 pub use analyze_fits::analyze_fits_and_compare;
 pub use annotate_stars::annotate_stars;
+pub use benchmark_psf::benchmark_psf;
 pub use dump_grading::dump_grading_results;
 pub use filter_rejected::filter_rejected_files;
 pub use list_projects::list_projects;

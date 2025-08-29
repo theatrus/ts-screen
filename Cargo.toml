@@ -16,10 +16,6 @@ categories = ["command-line-utilities", "science"]
 name = "psf_guard"
 path = "src/lib.rs"
 
-[[bin]]
-name = "benchmark_psf"
-path = "src/bin/benchmark_psf.rs"
-
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
