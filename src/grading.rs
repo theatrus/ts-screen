@@ -44,11 +44,12 @@ impl Default for StatisticalGradingConfig {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 struct ImageMetadata {
     #[serde(rename = "FileName")]
+    #[allow(dead_code)]
     filename: String,
     #[serde(rename = "FilterName")]
+    #[allow(dead_code)]
     filter_name: String,
     #[serde(rename = "HFR")]
     hfr: Option<f64>,
@@ -62,21 +63,17 @@ struct ImageMetadata {
 pub struct ImageStatistics {
     pub id: i32,
     pub target_id: i32,
-    #[allow(dead_code)]
     pub target_name: String,
     pub filter_name: String,
     pub hfr: Option<f64>,
     pub star_count: Option<i32>,
     pub exposure_time: String,
-    #[allow(dead_code)]
     pub original_status: i32,
-    #[allow(dead_code)]
     pub metadata_json: String,
 }
 
 #[derive(Debug)]
 pub struct FilterStatistics {
-    #[allow(dead_code)]
     pub filter_name: String,
     pub hfr_values: Vec<f64>,
     pub star_counts: Vec<i32>,

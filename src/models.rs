@@ -32,7 +32,6 @@ pub struct AcquiredImage {
 }
 
 #[derive(Debug, Copy, Clone)]
-#[allow(dead_code)]
 pub enum GradingStatus {
     Pending = 0,
     Accepted = 1,

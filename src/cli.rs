@@ -126,6 +126,198 @@ pub enum Commands {
         #[arg(short, long, default_value = "table")]
         format: String,
     },
+
+    /// Analyze FITS images and compare computed statistics with database values
+    AnalyzeFits {
+        /// Path to FITS file or directory containing FITS files
+        path: String,
+
+        /// Filter by project name
+        #[arg(short, long)]
+        project: Option<String>,
+
+        /// Filter by target name
+        #[arg(short, long)]
+        target: Option<String>,
+
+        /// Output format (table, json, csv)
+        #[arg(short, long, default_value = "table")]
+        format: String,
+
+        /// Star detection algorithm to use (nina, hocusfocus)
+        #[arg(long, default_value = "hocusfocus")]
+        detector: String,
+
+        /// Star detection sensitivity (normal, high, highest)
+        #[arg(long, default_value = "normal")]
+        sensitivity: String,
+
+        /// Apply MTF stretch before detection (enabled by default, use --no-apply-stretch to disable)
+        #[arg(long, default_value = "false")]
+        apply_stretch: bool,
+
+        /// Compare all detector combinations (overrides individual settings)
+        #[arg(long)]
+        compare_all: bool,
+
+        /// PSF fitting type (none, gaussian, moffat4)
+        #[arg(long, default_value = "none")]
+        psf_type: String,
+
+        /// Enable verbose debug output
+        #[arg(long, short)]
+        verbose: bool,
+    },
+
+    /// Convert FITS to PNG with MTF stretch applied
+    StretchToPng {
+        /// Path to FITS file
+        fits_path: String,
+
+        /// Output PNG path (if not provided, uses FITS filename with .png extension)
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// MTF midtone balance factor (0.0-1.0, default: 0.2)
+        #[arg(long, default_value = "0.2")]
+        midtone_factor: f64,
+
+        /// Shadow clipping in standard deviations (negative value, default: -2.8)
+        #[arg(long, default_value = "-2.8")]
+        shadow_clipping: f64,
+
+        /// Apply logarithmic scaling instead of MTF stretch
+        #[arg(long)]
+        logarithmic: bool,
+
+        /// Invert the image (black stars on white background)
+        #[arg(long)]
+        invert: bool,
+    },
+
+    /// Create annotated PNG with detected stars marked
+    AnnotateStars {
+        /// Path to FITS file
+        fits_path: String,
+
+        /// Output PNG path (if not provided, uses FITS filename with _annotated.png suffix)
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// Maximum number of stars to annotate (default: 500)
+        #[arg(long, default_value = "500")]
+        max_stars: usize,
+
+        /// Star detection algorithm to use: nina or hocusfocus
+        #[arg(long, default_value = "hocusfocus")]
+        detector: String,
+
+        /// Star detection sensitivity (normal, high, highest) - only for nina detector
+        #[arg(long, default_value = "normal")]
+        sensitivity: String,
+
+        /// MTF midtone balance factor (0.0-1.0, default: 0.2)
+        #[arg(long, default_value = "0.2")]
+        midtone_factor: f64,
+
+        /// Shadow clipping in standard deviations (negative value, default: -2.8)
+        #[arg(long, default_value = "-2.8")]
+        shadow_clipping: f64,
+
+        /// Color for star annotations (red, green, blue, yellow, cyan, magenta, white)
+        #[arg(long, default_value = "red")]
+        annotation_color: String,
+
+        /// PSF fitting type (none, gaussian, moffat4)
+        #[arg(long, default_value = "none")]
+        psf_type: String,
+
+        /// Enable verbose debug output
+        #[arg(long, short)]
+        verbose: bool,
+    },
+
+    /// Visualize PSF fit residuals for detected stars
+    VisualizePsf {
+        /// Path to FITS file
+        fits_path: String,
+
+        /// Output PNG path (if not provided, uses FITS filename with _psf_residuals.png suffix)
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// Star index to visualize (0-based, default: 0 for best star)
+        #[arg(long)]
+        star_index: Option<usize>,
+
+        /// PSF fitting type (gaussian or moffat4)
+        #[arg(long, default_value = "moffat4")]
+        psf_type: String,
+
+        /// Maximum number of stars to consider (default: 9)
+        #[arg(long, default_value = "9")]
+        max_stars: usize,
+
+        /// Star selection mode (top, regions, quality, corners)
+        #[arg(long, default_value = "top")]
+        selection_mode: String,
+
+        /// Sort criteria (r2, hfr, brightness)
+        #[arg(long, default_value = "r2")]
+        sort_by: String,
+
+        /// Enable verbose debug output
+        #[arg(long, short)]
+        verbose: bool,
+    },
+
+    /// Advanced multi-star PSF visualization with flexible layouts
+    VisualizePsfMulti {
+        /// Path to FITS file
+        fits_path: String,
+
+        /// Output PNG path
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// Number of stars to visualize
+        #[arg(long, default_value = "15")]
+        num_stars: usize,
+
+        /// PSF fitting type (gaussian or moffat4)
+        #[arg(long, default_value = "moffat4")]
+        psf_type: String,
+
+        /// Sort criteria (r2, hfr, brightness)
+        #[arg(long, default_value = "r2")]
+        sort_by: String,
+
+        /// Number of grid columns
+        #[arg(long, default_value = "5")]
+        grid_cols: usize,
+
+        /// Star selection mode (top, regions, quality, corners)
+        #[arg(long, default_value = "corners")]
+        selection_mode: String,
+
+        /// Enable verbose debug output
+        #[arg(long, short)]
+        verbose: bool,
+    },
+
+    /// Benchmark PSF fitting performance
+    BenchmarkPsf {
+        /// Path to FITS file
+        fits_path: String,
+
+        /// Number of runs for averaging (default: 5)
+        #[arg(long, default_value = "5")]
+        runs: usize,
+
+        /// Enable verbose debug output
+        #[arg(long, short)]
+        verbose: bool,
+    },
 }
 
 #[derive(Parser, Debug, Clone)]

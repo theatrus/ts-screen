@@ -2,18 +2,11 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use rusqlite::Connection;
 
-mod cli;
-mod commands;
-mod db;
-mod fits;
-mod grading;
-mod models;
-mod utils;
-
-use cli::{Cli, Commands};
-use commands::{
-    dump_grading_results, filter_rejected_files, list_projects, list_targets, read_fits,
-    regrade_images, show_images, update_grade,
+use psf_guard::cli::{Cli, Commands};
+use psf_guard::commands::{
+    analyze_fits_and_compare, annotate_stars, benchmark_psf, dump_grading_results,
+    filter_rejected_files, list_projects, list_targets, read_fits, regrade_images, show_images,
+    stretch_to_png, update_grade,
 };
 
 fn main() -> Result<()> {
@@ -85,6 +78,132 @@ fn main() -> Result<()> {
             format,
         } => {
             read_fits(&path, verbose, &format)?;
+        }
+        Commands::AnalyzeFits {
+            path,
+            project,
+            target,
+            format,
+            detector,
+            sensitivity,
+            apply_stretch,
+            compare_all,
+            psf_type,
+            verbose,
+        } => {
+            let conn = Connection::open(&cli.database)
+                .with_context(|| format!("Failed to open database: {}", cli.database))?;
+            analyze_fits_and_compare(
+                &conn,
+                &path,
+                project,
+                target,
+                &format,
+                &detector,
+                &sensitivity,
+                apply_stretch,
+                compare_all,
+                &psf_type,
+                verbose,
+            )?;
+        }
+        Commands::StretchToPng {
+            fits_path,
+            output,
+            midtone_factor,
+            shadow_clipping,
+            logarithmic,
+            invert,
+        } => {
+            stretch_to_png(
+                &fits_path,
+                output,
+                midtone_factor,
+                shadow_clipping,
+                logarithmic,
+                invert,
+            )?;
+        }
+        Commands::AnnotateStars {
+            fits_path,
+            output,
+            max_stars,
+            detector,
+            sensitivity,
+            midtone_factor,
+            shadow_clipping,
+            annotation_color,
+            psf_type,
+            verbose,
+        } => {
+            annotate_stars(
+                &fits_path,
+                output,
+                max_stars,
+                &detector,
+                &sensitivity,
+                midtone_factor,
+                shadow_clipping,
+                &annotation_color,
+                &psf_type,
+                verbose,
+            )?;
+        }
+        Commands::VisualizePsf {
+            fits_path,
+            output,
+            star_index,
+            psf_type,
+            max_stars,
+            selection_mode,
+            sort_by,
+            verbose,
+        } => {
+            use psf_guard::commands::visualize_psf::visualize_psf_multi;
+
+            // If a specific star index is requested, show just that one
+            let num_stars = if star_index.is_some() { 1 } else { max_stars };
+
+            visualize_psf_multi(
+                &fits_path,
+                output,
+                num_stars,
+                &psf_type,
+                &sort_by,
+                3, // Default to 3 columns
+                &selection_mode,
+                verbose,
+            )?;
+        }
+        Commands::VisualizePsfMulti {
+            fits_path,
+            output,
+            num_stars,
+            psf_type,
+            sort_by,
+            grid_cols,
+            selection_mode,
+            verbose,
+        } => {
+            use psf_guard::commands::visualize_psf::visualize_psf_multi;
+
+            visualize_psf_multi(
+                &fits_path,
+                output,
+                num_stars,
+                &psf_type,
+                &sort_by,
+                grid_cols,
+                &selection_mode,
+                verbose,
+            )?;
+        }
+        Commands::BenchmarkPsf {
+            fits_path,
+            runs,
+            verbose,
+        } => {
+            benchmark_psf(&fits_path, runs, verbose)?;
         }
     }
 

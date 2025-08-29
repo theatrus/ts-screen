@@ -12,11 +12,11 @@ fail-on-severity: moderate
 #   - BSD-3-Clause
 
 # ([String]). Block the pull request on these licenses (optional)
-deny-licenses:
-  - GPL-2.0
-  - GPL-3.0
-  - AGPL-3.0
-  - CC-BY-NC-4.0
+#deny-licenses:
+#  - GPL-2.0
+#  - GPL-3.0
+#  - AGPL-3.0
+#  - CC-BY-NC-4.0
 
 # Possible values: "always", "never", "on-failure"
 comment-summary-in-pr: on-failure

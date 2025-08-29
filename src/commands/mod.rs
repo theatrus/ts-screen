@@ -1,3 +1,6 @@
+pub mod analyze_fits;
+pub mod annotate_stars;
+pub mod benchmark_psf;
 pub mod dump_grading;
 pub mod filter_rejected;
 pub mod list_projects;
@@ -5,8 +8,13 @@ pub mod list_targets;
 pub mod read_fits;
 pub mod regrade;
 pub mod show_images;
+pub mod stretch_to_png;
 pub mod update_grade;
+pub mod visualize_psf;
 
+pub use analyze_fits::analyze_fits_and_compare;
+pub use annotate_stars::annotate_stars;
+pub use benchmark_psf::benchmark_psf;
 pub use dump_grading::dump_grading_results;
 pub use filter_rejected::filter_rejected_files;
 pub use list_projects::list_projects;
@@ -14,4 +22,6 @@ pub use list_targets::list_targets;
 pub use read_fits::read_fits;
 pub use regrade::regrade_images;
 pub use show_images::show_images;
+pub use stretch_to_png::stretch_to_png;
 pub use update_grade::update_grade;
+pub use visualize_psf::visualize_psf_residuals;
