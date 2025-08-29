@@ -1,6 +1,7 @@
 /// Star selection strategies for PSF visualization
 use crate::hocus_focus_star_detection::HocusFocusStar;
 
+#[allow(dead_code)]
 pub enum SelectionStrategy {
     /// Top N stars by specified metric
     TopN { n: usize, metric: SortMetric },
@@ -19,7 +20,7 @@ pub enum SelectionStrategy {
 }
 
 pub enum SortMetric {
-    HFR,
+    Hfr,
     R2,
     Brightness,
 }
@@ -53,7 +54,7 @@ fn select_top_n(
 ) -> Vec<HocusFocusStar> {
     // Sort by the specified metric
     match metric {
-        SortMetric::HFR => stars.sort_by(|a, b| a.hfr.partial_cmp(&b.hfr).unwrap()),
+        SortMetric::Hfr => stars.sort_by(|a, b| a.hfr.partial_cmp(&b.hfr).unwrap()),
         SortMetric::R2 => stars.sort_by(|a, b| {
             let r2_a = a.psf_model.as_ref().map(|m| m.r_squared).unwrap_or(0.0);
             let r2_b = b.psf_model.as_ref().map(|m| m.r_squared).unwrap_or(0.0);
@@ -145,7 +146,7 @@ fn select_quality_range(stars: Vec<HocusFocusStar>, per_tier: usize) -> Vec<Hocu
         r2_b.partial_cmp(&r2_a).unwrap()
     });
 
-    let total = stars_with_psf.len();
+    let _total = stars_with_psf.len();
     let mut selected = Vec::new();
 
     // Define quality tiers

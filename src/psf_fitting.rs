@@ -446,6 +446,9 @@ impl LevenbergMarquardt {
     }
 }
 
+/// Type alias for residual map data (observed, fitted, residuals)
+pub type ResidualMaps = (Vec<Vec<f64>>, Vec<Vec<f64>>, Vec<Vec<f64>>);
+
 /// PSF Fitter
 pub struct PSFFitter {
     psf_type: PSFType,
@@ -463,6 +466,7 @@ impl PSFFitter {
     }
 
     /// Fit PSF to a star
+    #[allow(clippy::too_many_arguments)]
     pub fn fit_star(
         &self,
         data: &[u16],
@@ -600,7 +604,7 @@ impl PSFFitter {
         center_x: f64,
         center_y: f64,
         model: &PSFModel,
-    ) -> Option<(Vec<Vec<f64>>, Vec<Vec<f64>>, Vec<Vec<f64>>)> {
+    ) -> Option<ResidualMaps> {
         let roi_half = self.roi_size as f64 / 2.0;
         let mut observed = vec![vec![0.0; self.roi_size]; self.roi_size];
         let mut fitted = vec![vec![0.0; self.roi_size]; self.roi_size];

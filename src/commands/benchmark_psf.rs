@@ -20,8 +20,10 @@ pub fn benchmark_psf(fits_path: &str, n_runs: usize, verbose: bool) -> Result<()
     if verbose {
         println!("\nWarming up...");
     }
-    let mut params = HocusFocusParams::default();
-    params.psf_type = PSFType::None;
+    let params = HocusFocusParams {
+        psf_type: PSFType::None,
+        ..Default::default()
+    };
     let _ = detect_stars_hocus_focus(&fits.data, width, height, &params);
 
     // Benchmark configurations
@@ -50,8 +52,10 @@ pub fn benchmark_psf(fits_path: &str, n_runs: usize, verbose: bool) -> Result<()
 
         // Run multiple times for average
         for _ in 0..n_runs {
-            let mut params = HocusFocusParams::default();
-            params.psf_type = *psf_type;
+            let params = HocusFocusParams {
+                psf_type: *psf_type,
+                ..Default::default()
+            };
 
             let start = Instant::now();
             let result = detect_stars_hocus_focus(&fits.data, width, height, &params);
@@ -109,8 +113,10 @@ pub fn benchmark_psf(fits_path: &str, n_runs: usize, verbose: bool) -> Result<()
         println!("\n=== Detailed PSF Analysis ===\n");
 
         for psf_type in &[PSFType::Gaussian, PSFType::Moffat4] {
-            let mut params = HocusFocusParams::default();
-            params.psf_type = *psf_type;
+            let params = HocusFocusParams {
+                psf_type: *psf_type,
+                ..Default::default()
+            };
 
             let result = detect_stars_hocus_focus(&fits.data, width, height, &params);
             let stars_with_psf: Vec<_> = result

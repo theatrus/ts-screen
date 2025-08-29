@@ -17,7 +17,7 @@ use super::text_render::{draw_text, draw_text_with_bg};
 
 /// Create a heatmap color from value (0.0 to 1.0)
 fn heatmap_color(value: f64, mode: &str) -> Rgb<u8> {
-    let clamped = value.max(0.0).min(1.0);
+    let clamped = value.clamp(0.0, 1.0);
 
     match mode {
         "residual" => {
@@ -47,6 +47,7 @@ fn heatmap_color(value: f64, mode: &str) -> Rgb<u8> {
 }
 
 /// Enhanced PSF visualization showing multiple stars
+#[allow(clippy::too_many_arguments)]
 pub fn visualize_psf_multi(
     fits_path: &str,
     output: Option<String>,
@@ -74,8 +75,10 @@ pub fn visualize_psf_multi(
     }
 
     // Detect stars using HocusFocus
-    let mut params = HocusFocusParams::default();
-    params.psf_type = psf_type_enum;
+    let params = HocusFocusParams {
+        psf_type: psf_type_enum,
+        ..Default::default()
+    };
 
     if verbose {
         eprintln!(
@@ -103,7 +106,7 @@ pub fn visualize_psf_multi(
 
     // Parse sort metric
     let sort_metric = match sort_by {
-        "hfr" => SortMetric::HFR,
+        "hfr" => SortMetric::Hfr,
         "r2" => SortMetric::R2,
         "brightness" => SortMetric::Brightness,
         _ => SortMetric::R2,
@@ -112,10 +115,10 @@ pub fn visualize_psf_multi(
     // Select stars based on strategy
     let strategy = match selection_mode {
         "regions" => SelectionStrategy::FiveRegions {
-            per_region: (num_stars + 4) / 5,
+            per_region: num_stars.div_ceil(5),
         },
         "quality" => SelectionStrategy::QualityRange {
-            per_tier: (num_stars + 3) / 4,
+            per_tier: num_stars.div_ceil(4),
         },
         "corners" => SelectionStrategy::Corners,
         _ => SelectionStrategy::TopN {
@@ -146,7 +149,7 @@ pub fn visualize_psf_multi(
     } else {
         grid_size
     };
-    let num_rows = (num_stars_actual + grid_cols - 1) / grid_cols;
+    let num_rows = num_stars_actual.div_ceil(grid_cols);
 
     // Panel dimensions
     let panel_size = 200; // Smaller panels for better fit

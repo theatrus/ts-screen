@@ -127,10 +127,11 @@ pub fn annotate_stars(
                 eprintln!("Using HocusFocus star detection");
             }
 
-            let mut params = HocusFocusParams::default();
-
             // Parse PSF type
-            params.psf_type = psf_type.parse().unwrap_or(PSFType::None);
+            let params = HocusFocusParams {
+                psf_type: psf_type.parse().unwrap_or(PSFType::None),
+                ..Default::default()
+            };
             if params.psf_type != PSFType::None && verbose {
                 eprintln!("  PSF Fitting: {:?}", params.psf_type);
             }
