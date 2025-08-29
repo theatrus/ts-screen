@@ -1,8 +1,8 @@
 use anyhow::Result;
 
-mod visualize_psf_multi;
-mod text_render;
 mod star_selection;
+mod text_render;
+mod visualize_psf_multi;
 
 pub use self::visualize_psf_multi::visualize_psf_multi;
 
@@ -16,16 +16,16 @@ pub fn visualize_psf_residuals(
     verbose: bool,
 ) -> Result<()> {
     // If a specific star index is requested, show just that one star
-    let num_stars = if star_index.is_some() { 1 } else { max_stars.min(9) };
-    
+    let num_stars = if star_index.is_some() {
+        1
+    } else {
+        max_stars.min(9)
+    };
+
     // Call the multi-star version with appropriate parameters
     visualize_psf_multi(
-        fits_path,
-        output,
-        num_stars,
-        psf_type,
-        "r2", // Sort by R² by default
-        3,    // 3 columns grid
+        fits_path, output, num_stars, psf_type, "r2",  // Sort by R² by default
+        3,     // 3 columns grid
         "top", // Default to top selection mode
         verbose,
     )

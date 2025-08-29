@@ -36,7 +36,7 @@ pub struct HocusFocusParams {
     pub star_center_tolerance: f64, // Fraction of box size for center tolerance
     pub saturation_threshold: f64, // ADU value for saturation
     pub min_hfr: f64,        // Minimum HFR threshold
-    
+
     // PSF fitting
     pub psf_type: PSFType, // PSF model type to fit (None, Gaussian, Moffat4)
 }
@@ -727,7 +727,7 @@ fn measure_stars(
         } else {
             None
         };
-        
+
         // Use PSF-derived FWHM if available
         let final_fwhm = if let Some(ref psf) = psf_model {
             psf.fwhm

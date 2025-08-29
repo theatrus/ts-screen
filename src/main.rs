@@ -4,9 +4,9 @@ use rusqlite::Connection;
 
 use psf_guard::cli::{Cli, Commands};
 use psf_guard::commands::{
-    analyze_fits_and_compare, annotate_stars, benchmark_psf, dump_grading_results, 
-    filter_rejected_files, list_projects, list_targets, read_fits, regrade_images, 
-    show_images, stretch_to_png, update_grade, visualize_psf_residuals,
+    analyze_fits_and_compare, annotate_stars, benchmark_psf, dump_grading_results,
+    filter_rejected_files, list_projects, list_targets, read_fits, regrade_images, show_images,
+    stretch_to_png, update_grade,
 };
 
 fn main() -> Result<()> {
@@ -160,10 +160,10 @@ fn main() -> Result<()> {
             verbose,
         } => {
             use psf_guard::commands::visualize_psf::visualize_psf_multi;
-            
+
             // If a specific star index is requested, show just that one
             let num_stars = if star_index.is_some() { 1 } else { max_stars };
-            
+
             visualize_psf_multi(
                 &fits_path,
                 output,
@@ -186,7 +186,7 @@ fn main() -> Result<()> {
             verbose,
         } => {
             use psf_guard::commands::visualize_psf::visualize_psf_multi;
-            
+
             visualize_psf_multi(
                 &fits_path,
                 output,

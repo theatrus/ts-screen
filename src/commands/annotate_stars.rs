@@ -128,13 +128,13 @@ pub fn annotate_stars(
             }
 
             let mut params = HocusFocusParams::default();
-            
+
             // Parse PSF type
             params.psf_type = psf_type.parse().unwrap_or(PSFType::None);
             if params.psf_type != PSFType::None && verbose {
                 eprintln!("  PSF Fitting: {:?}", params.psf_type);
             }
-            
+
             let result = detect_stars_hocus_focus(&fits.data, width, height, &params);
             let stars = result.stars;
 

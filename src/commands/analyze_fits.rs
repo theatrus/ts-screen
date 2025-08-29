@@ -321,8 +321,14 @@ fn analyze_single_fits(
     let computed_stats = fits.calculate_basic_statistics();
 
     // Perform star detection
-    let (star_count, avg_hfr, hfr_std, detection_info) =
-        detect_stars(&fits, &computed_stats, detector, sensitivity, apply_stretch, psf_type)?;
+    let (star_count, avg_hfr, hfr_std, detection_info) = detect_stars(
+        &fits,
+        &computed_stats,
+        detector,
+        sensitivity,
+        apply_stretch,
+        psf_type,
+    )?;
 
     // Look for matching database entries
     let db_info = get_database_info(conn, filename)?;
@@ -480,7 +486,7 @@ fn detect_stars(
             println!("  Using OpenCV with automatic fallback");
 
             let mut params = HocusFocusParams::default();
-            
+
             // Parse PSF type
             params.psf_type = psf_type.parse().unwrap_or(PSFType::None);
             if params.psf_type != PSFType::None {

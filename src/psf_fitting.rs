@@ -1,7 +1,6 @@
 /// PSF (Point Spread Function) fitting module
 /// Implements Gaussian and Moffat PSF models with Levenberg-Marquardt fitting
 /// Based on HocusFocus implementation by George Hilios
-
 use nalgebra::{DMatrix, DVector};
 use std::f64::consts::PI;
 
@@ -145,22 +144,22 @@ impl PSFFunction for GaussianPSF {
 
         // d/dA
         grad[0] = exp_arg;
-        
+
         // d/dB
         grad[1] = 1.0;
-        
+
         // d/dx0
         grad[2] = a * exp_arg * (xp * cos_t / sx2 - yp * sin_t / sy2);
-        
+
         // d/dy0
         grad[3] = a * exp_arg * (xp * sin_t / sx2 + yp * cos_t / sy2);
-        
+
         // d/dsigma_x
         grad[4] = a * exp_arg * xp * xp / (sx2 * sigma_x);
-        
+
         // d/dsigma_y
         grad[5] = a * exp_arg * yp * yp / (sy2 * sigma_y);
-        
+
         // d/dtheta
         grad[6] = a * exp_arg * xp * yp * (1.0 / sx2 - 1.0 / sy2);
     }
@@ -223,25 +222,25 @@ impl PSFFunction for Moffat4PSF {
 
         // d/dA
         grad[0] = d.powf(-beta);
-        
+
         // d/dB
         grad[1] = 1.0;
-        
+
         // Common terms
         let factor = -a * beta * d.powf(-beta - 1.0);
-        
+
         // d/dx0
         grad[2] = factor * ((2.0 * sin_t * yp / v2) - (2.0 * cos_t * xp / u2));
-        
+
         // d/dy0
         grad[3] = factor * ((-2.0 * sin_t * xp / u2) - (2.0 * cos_t * yp / v2));
-        
+
         // d/du (sigma_x)
         grad[4] = (2.0 * a * beta / u3) * xp2 * d.powf(-beta - 1.0);
-        
+
         // d/dv (sigma_y)
         grad[5] = (2.0 * a * beta / v3) * yp2 * d.powf(-beta - 1.0);
-        
+
         // d/dtheta
         grad[6] = factor * (2.0 * yp * xp * (1.0 / u2 - 1.0 / v2));
     }
@@ -300,13 +299,16 @@ pub fn extract_roi(
         while x <= half_size {
             let sample_x = center_x + x;
             let sample_y = center_y + y;
-            
-            if sample_x >= 0.0 && sample_x < width as f64 && 
-               sample_y >= 0.0 && sample_y < height as f64 {
+
+            if sample_x >= 0.0
+                && sample_x < width as f64
+                && sample_y >= 0.0
+                && sample_y < height as f64
+            {
                 positions.push((x, y)); // Relative to centroid
                 values.push(bilinear_sample(data, width, height, sample_x, sample_y));
             }
-            
+
             x += sample_spacing;
         }
         y += sample_spacing;
@@ -347,7 +349,7 @@ impl LevenbergMarquardt {
     ) -> Result<Vec<f64>, String> {
         let n_params = initial_params.len();
         let n_points = positions.len();
-        
+
         if n_points < n_params {
             return Err("Not enough data points for fitting".to_string());
         }
@@ -355,7 +357,7 @@ impl LevenbergMarquardt {
         let mut params = initial_params.to_vec();
         let mut best_params = params.clone();
         let mut best_error = f64::MAX;
-        
+
         let mut jacobian = DMatrix::<f64>::zeros(n_points, n_params);
         let mut residuals = DVector::<f64>::zeros(n_points);
         let mut gradient = vec![0.0; n_params];
@@ -444,7 +446,6 @@ impl LevenbergMarquardt {
     }
 }
 
-
 /// PSF Fitter
 pub struct PSFFitter {
     psf_type: PSFType,
@@ -456,7 +457,7 @@ impl PSFFitter {
     pub fn new(psf_type: PSFType) -> Self {
         Self {
             psf_type,
-            roi_size: 32,      // Default ROI size
+            roi_size: 32,        // Default ROI size
             sample_spacing: 0.5, // Sub-pixel sampling
         }
     }
@@ -504,59 +505,66 @@ impl PSFFitter {
         let initial_params = vec![
             peak_brightness - background, // Amplitude
             background,                   // Background
-            0.0,                         // x0 (centered)
-            0.0,                         // y0 (centered)
-            bbox_width / 3.0,            // sigma_x
-            bbox_height / 3.0,           // sigma_y
-            0.0,                         // theta
+            0.0,                          // x0 (centered)
+            0.0,                          // y0 (centered)
+            bbox_width / 3.0,             // sigma_x
+            bbox_height / 3.0,            // sigma_y
+            0.0,                          // theta
         ];
 
         // Bounds
         let dx_limit = bbox_width / 8.0;
         let dy_limit = bbox_height / 8.0;
         let sigma_max = ((bbox_width * bbox_width + bbox_height * bbox_height).sqrt()) / 2.0;
-        
+
         let lower_bounds = vec![
-            0.0,              // A must be positive
-            0.0,              // B must be positive
-            -dx_limit,        // x0
-            -dy_limit,        // y0
-            0.1,              // sigma_x minimum
-            0.1,              // sigma_y minimum
-            -PI / 2.0,        // theta
+            0.0,       // A must be positive
+            0.0,       // B must be positive
+            -dx_limit, // x0
+            -dy_limit, // y0
+            0.1,       // sigma_x minimum
+            0.1,       // sigma_y minimum
+            -PI / 2.0, // theta
         ];
-        
+
         let upper_bounds = vec![
             2.0 * (peak_brightness - background), // A max
             peak_brightness,                      // B max
-            dx_limit,                            // x0
-            dy_limit,                            // y0
-            sigma_max,                           // sigma_x max
-            sigma_max,                           // sigma_y max
-            PI / 2.0,                            // theta
+            dx_limit,                             // x0
+            dy_limit,                             // y0
+            sigma_max,                            // sigma_x max
+            sigma_max,                            // sigma_y max
+            PI / 2.0,                             // theta
         ];
 
         // Fit the model
         let mut optimizer = LevenbergMarquardt::default();
-        match optimizer.fit(&*psf, &positions, &values, &initial_params, &lower_bounds, &upper_bounds) {
+        match optimizer.fit(
+            &*psf,
+            &positions,
+            &values,
+            &initial_params,
+            &lower_bounds,
+            &upper_bounds,
+        ) {
             Ok(fitted_params) => {
                 // Calculate goodness of fit
                 let mut sum_squared_residuals = 0.0;
                 let mut sum_squared_total = 0.0;
                 let mean_value = values.iter().sum::<f64>() / values.len() as f64;
-                
+
                 for ((x, y), observed) in positions.iter().zip(values.iter()) {
                     let predicted = psf.value(*x, *y, &fitted_params);
                     sum_squared_residuals += (observed - predicted).powi(2);
                     sum_squared_total += (observed - mean_value).powi(2);
                 }
-                
+
                 let r_squared = if sum_squared_total > 0.0 {
                     1.0 - sum_squared_residuals / sum_squared_total
                 } else {
                     0.0
                 };
-                
+
                 let rmse = (sum_squared_residuals / positions.len() as f64).sqrt();
 
                 let mut model = PSFModel {
@@ -618,13 +626,16 @@ impl PSFFitter {
             for j in 0..self.roi_size {
                 let rel_x = j as f64 - roi_half + 0.5;
                 let rel_y = i as f64 - roi_half + 0.5;
-                
+
                 // Get observed value using bilinear interpolation
                 let pixel_x = center_x + rel_x;
                 let pixel_y = center_y + rel_y;
-                
-                if pixel_x >= 0.0 && pixel_x < width as f64 
-                   && pixel_y >= 0.0 && pixel_y < height as f64 {
+
+                if pixel_x >= 0.0
+                    && pixel_x < width as f64
+                    && pixel_y >= 0.0
+                    && pixel_y < height as f64
+                {
                     observed[i][j] = bilinear_sample(data, width, height, pixel_x, pixel_y);
                     fitted[i][j] = psf.value(rel_x, rel_y, &params);
                     residuals[i][j] = observed[i][j] - fitted[i][j];
