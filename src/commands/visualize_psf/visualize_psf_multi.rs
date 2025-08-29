@@ -12,6 +12,9 @@ use crate::image_analysis::FitsImage;
 use crate::psf_fitting::{PSFType, PSFFitter};
 use crate::mtf_stretch::{stretch_image, StretchParameters};
 
+use super::text_render::{draw_text, draw_text_with_bg};
+use super::star_selection::{SelectionStrategy, SortMetric, select_stars};
+
 /// Create a heatmap color from value (0.0 to 1.0)
 fn heatmap_color(value: f64, mode: &str) -> Rgb<u8> {
     let clamped = value.max(0.0).min(1.0);
@@ -51,6 +54,7 @@ pub fn visualize_psf_multi(
     psf_type: &str,
     sort_by: &str,
     grid_cols: usize,
+    selection_mode: &str,
     verbose: bool,
 ) -> Result<()> {
     if verbose {
@@ -84,7 +88,7 @@ pub fn visualize_psf_multi(
     }
 
     // Filter stars with PSF fits
-    let mut stars_with_psf: Vec<_> = result.stars.into_iter()
+    let stars_with_psf: Vec<_> = result.stars.into_iter()
         .filter(|s| s.psf_model.is_some())
         .collect();
     
@@ -92,19 +96,26 @@ pub fn visualize_psf_multi(
         anyhow::bail!("No stars with successful PSF fits found");
     }
     
-    // Sort stars based on criteria
-    match sort_by {
-        "hfr" => stars_with_psf.sort_by(|a, b| a.hfr.partial_cmp(&b.hfr).unwrap()),
-        "r2" => stars_with_psf.sort_by(|a, b| {
-            let r2_a = a.psf_model.as_ref().unwrap().r_squared;
-            let r2_b = b.psf_model.as_ref().unwrap().r_squared;
-            r2_b.partial_cmp(&r2_a).unwrap() // Higher R² first
-        }),
-        "brightness" => stars_with_psf.sort_by(|a, b| b.brightness.partial_cmp(&a.brightness).unwrap()),
-        _ => {} // Default order
-    }
+    // Parse sort metric
+    let sort_metric = match sort_by {
+        "hfr" => SortMetric::HFR,
+        "r2" => SortMetric::R2,
+        "brightness" => SortMetric::Brightness,
+        _ => SortMetric::R2,
+    };
     
-    let stars_to_show: Vec<_> = stars_with_psf.into_iter().take(num_stars).collect();
+    // Select stars based on strategy
+    let strategy = match selection_mode {
+        "regions" => SelectionStrategy::FiveRegions { per_region: (num_stars + 4) / 5 },
+        "quality" => SelectionStrategy::QualityRange { per_tier: (num_stars + 3) / 4 },
+        _ => SelectionStrategy::TopN { n: num_stars, metric: sort_metric },
+    };
+    
+    let stars_to_show = select_stars(stars_with_psf, &strategy, width, height);
+    
+    if stars_to_show.is_empty() {
+        anyhow::bail!("No stars selected with the given criteria");
+    }
     
     if verbose {
         eprintln!("Showing {} stars sorted by {}", stars_to_show.len(), sort_by);
@@ -213,21 +224,62 @@ pub fn visualize_psf_multi(
                     Rgba([200, 200, 200, 255])
                 );
                 
-                // Add simple title marker (O=Observed, F=Fitted, R=Residual)
-                let marker = match panel_idx {
-                    0 => "O",
-                    1 => "F",
-                    2 => "R",
+                // Add title text
+                let title_text = match panel_idx {
+                    0 => "OBSERVED",
+                    1 => "FITTED",
+                    2 => "RESIDUAL",
                     _ => "",
                 };
-                // Draw marker as simple pixels (very basic)
-                if !marker.is_empty() {
-                    // This is a placeholder - in a real implementation, you'd want proper text rendering
-                }
+                draw_text_with_bg(
+                    &mut img,
+                    panel_x as u32 + 5,
+                    panel_y as u32 - 20,
+                    title_text,
+                    Rgba([255, 255, 255, 255]),
+                    Rgba([50, 50, 50, 255]),
+                    2
+                );
             }
             
-            // Add star info box with color coding based on R²
+            // Add star info text
             let info_y = y_offset + panel_size + 50;
+            
+            // Star number
+            let star_num_text = format!("#{}", star_idx + 1);
+            draw_text_with_bg(
+                &mut img,
+                x_offset as u32,
+                info_y as u32,
+                &star_num_text,
+                Rgba([255, 255, 255, 255]),
+                Rgba([30, 30, 30, 255]),
+                3
+            );
+            
+            // Position
+            let pos_text = format!("({:.0},{:.0})", star.position.0, star.position.1);
+            draw_text(
+                &mut img,
+                x_offset as u32 + 60,
+                info_y as u32,
+                &pos_text,
+                Rgba([200, 200, 200, 255]),
+                2
+            );
+            
+            // HFR
+            let hfr_text = format!("HFR={:.2}", star.hfr);
+            draw_text(
+                &mut img,
+                x_offset as u32,
+                info_y as u32 + 20,
+                &hfr_text,
+                Rgba([200, 200, 255, 255]),
+                2
+            );
+            
+            // R² with color coding
             let r2_color = if psf_model.r_squared > 0.9 {
                 Rgba([0, 255, 0, 255]) // Green for excellent fit
             } else if psf_model.r_squared > 0.7 {
@@ -236,16 +288,26 @@ pub fn visualize_psf_multi(
                 Rgba([255, 0, 0, 255]) // Red for poor fit
             };
             
-            // Draw R² indicator box
-            for dy in 0..10 {
-                for dx in 0..20 {
-                    img.put_pixel(
-                        (x_offset + dx) as u32,
-                        (info_y + dy) as u32,
-                        r2_color
-                    );
-                }
-            }
+            let r2_text = format!("R2={:.3}", psf_model.r_squared);
+            draw_text(
+                &mut img,
+                x_offset as u32 + 120,
+                info_y as u32 + 20,
+                &r2_text,
+                r2_color,
+                2
+            );
+            
+            // FWHM
+            let fwhm_text = format!("FWHM={:.2}", psf_model.fwhm);
+            draw_text(
+                &mut img,
+                x_offset as u32 + 250,
+                info_y as u32 + 20,
+                &fwhm_text,
+                Rgba([200, 200, 200, 255]),
+                2
+            );
         }
     }
     
@@ -286,8 +348,8 @@ pub fn visualize_psf_multi(
         Rgba([200, 200, 200, 255])
     );
     
-    // Mark star locations on map
-    for star in &stars_to_show {
+    // Mark star locations on map with numbers
+    for (idx, star) in stars_to_show.iter().enumerate() {
         let map_star_x = (star.position.0 / scale as f64) as i32;
         let map_star_y = (star.position.1 / scale as f64) as i32;
         
@@ -301,18 +363,30 @@ pub fn visualize_psf_multi(
                 img.put_pixel(cx as u32, cy as u32, Rgba([255, 0, 0, 255]));
             }
         }
+        
+        // Add star number
+        let star_num = format!("{}", idx + 1);
+        draw_text_with_bg(
+            &mut img,
+            (map_x as i32 + map_star_x - 10) as u32,
+            (map_y as i32 + map_star_y - 10) as u32,
+            &star_num,
+            Rgba([255, 255, 255, 255]),
+            Rgba([255, 0, 0, 255]),
+            2
+        );
     }
     
-    // Add map title indicator (simple colored box)
-    for dy in 0..3 {
-        for dx in 0..50 {
-            img.put_pixel(
-                (map_x + dx) as u32,
-                (map_y - 20 + dy) as u32,
-                Rgba([100, 100, 200, 255]) // Blue indicator for map
-            );
-        }
-    }
+    // Add map title
+    draw_text_with_bg(
+        &mut img,
+        map_x as u32,
+        map_y as u32 - 25,
+        "STAR LOCATIONS",
+        Rgba([255, 255, 255, 255]),
+        Rgba([50, 50, 50, 255]),
+        2
+    );
 
     // Generate output filename
     let output_path = output.unwrap_or_else(|| {

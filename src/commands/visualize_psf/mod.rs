@@ -1,6 +1,9 @@
 use anyhow::Result;
 
 mod visualize_psf_multi;
+mod text_render;
+mod star_selection;
+
 pub use self::visualize_psf_multi::visualize_psf_multi;
 
 /// Wrapper for backwards compatibility
@@ -23,6 +26,7 @@ pub fn visualize_psf_residuals(
         psf_type,
         "r2", // Sort by R² by default
         3,    // 3 columns grid
+        "top", // Default to top selection mode
         verbose,
     )
 }

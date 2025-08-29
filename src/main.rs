@@ -155,14 +155,46 @@ fn main() -> Result<()> {
             star_index,
             psf_type,
             max_stars,
+            selection_mode,
+            sort_by,
             verbose,
         } => {
-            visualize_psf_residuals(
+            use psf_guard::commands::visualize_psf::visualize_psf_multi;
+            
+            // If a specific star index is requested, show just that one
+            let num_stars = if star_index.is_some() { 1 } else { max_stars };
+            
+            visualize_psf_multi(
                 &fits_path,
                 output,
-                star_index,
+                num_stars,
                 &psf_type,
-                max_stars,
+                &sort_by,
+                3, // Default to 3 columns
+                &selection_mode,
+                verbose,
+            )?;
+        }
+        Commands::VisualizePsfMulti {
+            fits_path,
+            output,
+            num_stars,
+            psf_type,
+            sort_by,
+            grid_cols,
+            selection_mode,
+            verbose,
+        } => {
+            use psf_guard::commands::visualize_psf::visualize_psf_multi;
+            
+            visualize_psf_multi(
+                &fits_path,
+                output,
+                num_stars,
+                &psf_type,
+                &sort_by,
+                grid_cols,
+                &selection_mode,
                 verbose,
             )?;
         }

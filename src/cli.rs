@@ -254,9 +254,51 @@ pub enum Commands {
         #[arg(long, default_value = "moffat4")]
         psf_type: String,
 
-        /// Maximum number of stars to consider (default: 20)
-        #[arg(long, default_value = "20")]
+        /// Maximum number of stars to consider (default: 9)
+        #[arg(long, default_value = "9")]
         max_stars: usize,
+
+        /// Star selection mode (top, regions, quality)
+        #[arg(long, default_value = "top")]
+        selection_mode: String,
+
+        /// Sort criteria (r2, hfr, brightness)
+        #[arg(long, default_value = "r2")]
+        sort_by: String,
+
+        /// Enable verbose debug output
+        #[arg(long, short)]
+        verbose: bool,
+    },
+
+    /// Advanced multi-star PSF visualization with flexible layouts
+    VisualizePsfMulti {
+        /// Path to FITS file
+        fits_path: String,
+
+        /// Output PNG path
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// Number of stars to visualize
+        #[arg(long, default_value = "15")]
+        num_stars: usize,
+
+        /// PSF fitting type (gaussian or moffat4)
+        #[arg(long, default_value = "moffat4")]
+        psf_type: String,
+
+        /// Sort criteria (r2, hfr, brightness)
+        #[arg(long, default_value = "r2")]
+        sort_by: String,
+
+        /// Number of grid columns
+        #[arg(long, default_value = "5")]
+        grid_cols: usize,
+
+        /// Star selection mode (top, regions, quality)
+        #[arg(long, default_value = "regions")]
+        selection_mode: String,
 
         /// Enable verbose debug output
         #[arg(long, short)]
