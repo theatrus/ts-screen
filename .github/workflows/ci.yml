@@ -68,6 +68,7 @@ jobs:
         # Set environment variables
         echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
         echo "OpenCV_DIR=C:\vcpkg\installed\x64-windows" >> $env:GITHUB_ENV
+        echo "VCPKGRS_DYNAMIC=1" >> $env:GITHUB_ENV
       shell: pwsh
     
     - name: Install Rust
