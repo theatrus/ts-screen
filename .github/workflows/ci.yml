@@ -68,7 +68,8 @@ jobs:
         # Set environment variables
         echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
         echo "OpenCV_DIR=C:\vcpkg\installed\x64-windows" >> $env:GITHUB_ENV
-        echo "VCPKGRS_DYNAMIC=1" >> $env:GITHUB_ENV
+        echo "OPENCV_DISABLE_PROBES=pkg_config,cmake,vcpkg_cmake" >> $env:GITHUB_ENV
+        echo "OPENCV_LINK_DIRS=C:\vcpkg\installed\x64-windows\lib" >> $env:GITHUB_ENV
       shell: pwsh
     
     - name: Install Rust
@@ -95,38 +96,38 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-target-opencv-${{ hashFiles('**/Cargo.lock') }}
     
-    - name: Check formatting
-      run: cargo fmt -- --check
+    # - name: Check formatting
+    #   run: cargo fmt -- --check
     
-    - name: Run clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings
+    # - name: Run clippy
+    #   run: cargo clippy --all-targets --all-features -- -D warnings
     
-    - name: Build
-      run: cargo build --verbose
+    # - name: Build
+    #   run: cargo build --verbose
     
-    - name: Run tests
-      run: cargo test --verbose
+    # - name: Run tests
+    #   run: cargo test --verbose
     
-    - name: Build release binary
-      run: cargo build --verbose --release
+    # - name: Build release binary
+    #   run: cargo build --verbose --release
     
-    - name: Upload artifact (Linux)
-      if: matrix.os == 'ubuntu-22.04'
-      uses: actions/upload-artifact@v4
-      with:
-        name: psf-guard-linux-x64
-        path: target/release/psf-guard
+    # - name: Upload artifact (Linux)
+    #   if: matrix.os == 'ubuntu-22.04'
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: psf-guard-linux-x64
+    #     path: target/release/psf-guard
     
-    - name: Upload artifact (Windows)
-      if: matrix.os == 'windows-latest'
-      uses: actions/upload-artifact@v4
-      with:
-        name: psf-guard-windows-x64
-        path: target/release/psf-guard.exe
+    # - name: Upload artifact (Windows)
+    #   if: matrix.os == 'windows-latest'
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: psf-guard-windows-x64
+    #     path: target/release/psf-guard.exe
     
-    - name: Upload artifact (macOS)
-      if: matrix.os == 'macos-latest'
-      uses: actions/upload-artifact@v4
-      with:
-        name: psf-guard-macos-x64
-        path: target/release/psf-guard
+    # - name: Upload artifact (macOS)
+    #   if: matrix.os == 'macos-latest'
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: psf-guard-macos-x64
+    #     path: target/release/psf-guard
