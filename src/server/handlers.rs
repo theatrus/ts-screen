@@ -1,10 +1,13 @@
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{header::{CACHE_CONTROL, CONTENT_TYPE}, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
+use serde::Deserialize;
 use std::sync::Arc;
+use tokio::fs::File;
+use tokio::io::AsyncReadExt;
 
 use crate::db::Database;
 use crate::models::GradingStatus;
@@ -186,9 +189,6 @@ pub async fn update_image_grade(
     Ok(Json(ApiResponse::success(())))
 }
 
-use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
-use tokio::fs::File;
-use tokio::io::AsyncReadExt;
 
 // Image preview endpoint
 #[axum::debug_handler]
@@ -654,12 +654,151 @@ pub async fn get_annotated_image(
     ))
 }
 
+// PSF multi image parameters
+#[derive(Deserialize)]
+pub struct PsfMultiOptions {
+    pub num_stars: Option<usize>,
+    pub psf_type: Option<String>,
+    pub sort_by: Option<String>,
+    pub grid_cols: Option<usize>,
+    pub selection: Option<String>,
+}
+
+#[axum::debug_handler]
 pub async fn get_psf_visualization(
-    State(_state): State<Arc<AppState>>,
-    Path(_image_id): Path<i32>,
-) -> Result<Response, AppError> {
-    // TODO: Implement PSF visualization
-    Err(AppError::NotImplemented)
+    State(state): State<Arc<AppState>>,
+    Path(image_id): Path<i32>,
+    Query(options): Query<PsfMultiOptions>,
+) -> Result<impl IntoResponse, AppError> {
+    use crate::commands::visualize_psf_multi_common::create_psf_multi_image;
+    use crate::image_analysis::FitsImage;
+    use crate::psf_fitting::PSFType;
+    use crate::server::cache::CacheManager;
+    use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+    use image::{ColorType, ImageEncoder};
+
+    // Get image metadata from database
+    let (image, file_only, target_name) = {
+        let conn = state.db();
+        let conn = conn.lock().map_err(|_| AppError::DatabaseError)?;
+        let db = Database::new(&conn);
+
+        let images = db
+            .get_images_by_ids(&[image_id])
+            .map_err(|_| AppError::DatabaseError)?;
+
+        let image = images.into_iter().next().ok_or(AppError::NotFound)?;
+
+        // Get target name
+        let targets = db
+            .get_targets_by_ids(&[image.target_id])
+            .map_err(|_| AppError::DatabaseError)?;
+        
+        let target = targets.into_iter().next().ok_or(AppError::NotFound)?;
+        let target_name = target.name.clone();
+
+        let metadata: serde_json::Value = serde_json::from_str(&image.metadata)
+            .map_err(|_| AppError::BadRequest("Invalid metadata".to_string()))?;
+
+        let filename = metadata["FileName"]
+            .as_str()
+            .ok_or_else(|| AppError::BadRequest("No filename in metadata".to_string()))?;
+
+        let file_only = filename
+            .split(&['\\', '/'][..])
+            .next_back()
+            .ok_or_else(|| AppError::BadRequest("Invalid filename format".to_string()))?
+            .to_string();
+
+        (image, file_only, target_name)
+    };
+
+    // Parse parameters
+    let num_stars = options.num_stars.unwrap_or(9);
+    let psf_type_str = options.psf_type.as_deref().unwrap_or("moffat");
+    let sort_by = options.sort_by.as_deref().unwrap_or("r2");
+    let selection = options.selection.as_deref().unwrap_or("top-n");
+    
+    let psf_type: PSFType = psf_type_str.parse().unwrap_or(PSFType::Moffat4);
+    
+    // Create cache key for PSF multi image
+    let cache_key = format!(
+        "psf_multi_{}_{}_{}_{}_{}_{}",
+        image_id, num_stars, psf_type_str, sort_by, selection,
+        options.grid_cols.unwrap_or(0)
+    );
+    let cache_manager = CacheManager::new(state.cache_dir.clone());
+    cache_manager
+        .ensure_category_dir("psf_multi")
+        .map_err(|e| AppError::InternalError(format!("Failed to create cache directory: {}", e)))?;
+    let cache_path = cache_manager.get_cached_path("psf_multi", &cache_key, "png");
+
+    // Check if cached version exists
+    if cache_manager.is_cached(&cache_path) {
+        // Serve from cache
+        let mut file = File::open(&cache_path)
+            .await
+            .map_err(|_| AppError::InternalError("Failed to read cache".to_string()))?;
+
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)
+            .await
+            .map_err(|_| AppError::InternalError("Failed to read file".to_string()))?;
+
+        return Ok((
+            StatusCode::OK,
+            [
+                (CONTENT_TYPE, "image/png"),
+                (CACHE_CONTROL, "max-age=86400"), // Cache for 1 day
+            ],
+            buffer,
+        ));
+    }
+
+    // Find and load the FITS file
+    let fits_path = find_fits_file(&state, &image, &target_name, &file_only)?;
+    let fits = FitsImage::from_file(&fits_path)
+        .map_err(|e| AppError::InternalError(format!("Failed to load FITS: {}", e)))?;
+
+    // Create PSF multi visualization using the common function
+    let rgba_image = create_psf_multi_image(
+        &fits,
+        num_stars,
+        psf_type,
+        sort_by,
+        options.grid_cols,
+        selection,
+    )
+    .map_err(|e| AppError::InternalError(format!("Failed to create PSF visualization: {}", e)))?;
+
+    // Save to cache
+    let cache_file = std::fs::File::create(&cache_path)
+        .map_err(|e| AppError::InternalError(format!("Failed to create cache file: {}", e)))?;
+    let writer = std::io::BufWriter::new(cache_file);
+    let encoder = PngEncoder::new_with_quality(writer, CompressionType::Fast, FilterType::NoFilter);
+
+    encoder
+        .write_image(
+            &rgba_image,
+            rgba_image.width(),
+            rgba_image.height(),
+            ColorType::Rgba8.into(),
+        )
+        .map_err(|e| AppError::InternalError(format!("Failed to encode PNG: {}", e)))?;
+
+    // Read the cached file
+    let png_buffer = tokio::fs::read(&cache_path)
+        .await
+        .map_err(|_| AppError::InternalError("Failed to read generated PNG".to_string()))?;
+
+    Ok((
+        StatusCode::OK,
+        [
+            (CONTENT_TYPE, "image/png"),
+            (CACHE_CONTROL, "max-age=86400"), // Cache for 1 day
+        ],
+        png_buffer,
+    ))
 }
 
 // Error handling
