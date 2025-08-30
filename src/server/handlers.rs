@@ -124,32 +124,107 @@ pub async fn get_images(
     Ok(Json(ApiResponse::success(response)))
 }
 
+#[axum::debug_handler]
 pub async fn get_image(
     State(state): State<Arc<AppState>>,
     Path(image_id): Path<i32>,
 ) -> Result<Json<ApiResponse<ImageResponse>>, AppError> {
-    let conn = state.db();
-    let conn = conn.lock().map_err(|_| AppError::DatabaseError)?;
-    let db = Database::new(&conn);
+    use crate::image_analysis::FitsImage;
 
-    let images = db
-        .get_images_by_ids(&[image_id])
-        .map_err(|_| AppError::DatabaseError)?;
+    // Get image data from database first (before any async operations)
+    let (image, proj_name, target_name, mut metadata) = {
+        let conn = state.db();
+        let conn = conn.lock().map_err(|_| AppError::DatabaseError)?;
+        let db = Database::new(&conn);
 
-    let image = images.into_iter().next().ok_or(AppError::NotFound)?;
+        let images = db
+            .get_images_by_ids(&[image_id])
+            .map_err(|_| AppError::DatabaseError)?;
 
-    // Get project and target names
-    let all_images = db
-        .query_images(None, None, None, None)
-        .map_err(|_| AppError::DatabaseError)?;
+        let image = images.into_iter().next().ok_or(AppError::NotFound)?;
 
-    let (_, proj_name, target_name) = all_images
-        .into_iter()
-        .find(|(img, _, _)| img.id == image_id)
-        .ok_or(AppError::NotFound)?;
+        // Get project and target names
+        let all_images = db
+            .query_images(None, None, None, None)
+            .map_err(|_| AppError::DatabaseError)?;
 
-    let metadata: serde_json::Value = serde_json::from_str(&image.metadata)
-        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+        let (_, proj_name, target_name) = all_images
+            .into_iter()
+            .find(|(img, _, _)| img.id == image_id)
+            .ok_or(AppError::NotFound)?;
+
+        let metadata: serde_json::Value = serde_json::from_str(&image.metadata)
+            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+        (image, proj_name, target_name, metadata)
+    }; // Database connection is dropped here
+
+    // Now we can do async operations
+    let stats_cache_filename = format!("stats_{}.json", image_id);
+    let stats_cache_path = state.get_cache_path("stats", &stats_cache_filename);
+    
+    // Ensure cache directory exists
+    if let Some(parent) = stats_cache_path.parent() {
+        let _ = tokio::fs::create_dir_all(parent).await;
+    }
+    
+    // Check if statistics are already cached
+    let fits_stats = if tokio::fs::metadata(&stats_cache_path).await.is_ok() {
+        // Load from cache
+        match tokio::fs::read_to_string(&stats_cache_path).await {
+            Ok(cached_data) => {
+                match serde_json::from_str::<serde_json::Value>(&cached_data) {
+                    Ok(stats) => Some(stats),
+                    Err(_) => None,
+                }
+            },
+            Err(_) => None,
+        }
+    } else {
+        // Calculate statistics from FITS file
+        let filename_result = metadata["FileName"]
+            .as_str()
+            .and_then(|filename| {
+                filename
+                    .split(&['\\', '/'][..])
+                    .next_back()
+                    .map(|file_only| find_fits_file(&state, &image, &target_name, file_only))
+            });
+
+        if let Some(Ok(fits_path)) = filename_result {
+            if let Ok(fits) = FitsImage::from_file(&fits_path) {
+                let stats = fits.calculate_basic_statistics();
+                let stats_json = serde_json::json!({
+                    "Min": stats.min,
+                    "Max": stats.max,
+                    "Mean": stats.mean,
+                    "Median": stats.median,
+                    "StdDev": stats.std_dev,
+                    "Mad": stats.mad
+                });
+
+                // Cache the statistics
+                if let Ok(cached_data) = serde_json::to_string(&stats_json) {
+                    let _ = tokio::fs::write(&stats_cache_path, cached_data).await;
+                }
+
+                Some(stats_json)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+
+    // Merge statistics into metadata if available
+    if let (Some(stats), Some(metadata_obj)) = (fits_stats, metadata.as_object_mut()) {
+        if let Some(stats_obj) = stats.as_object() {
+            for (key, value) in stats_obj {
+                metadata_obj.insert(key.clone(), value.clone());
+            }
+        }
+    }
 
     let response = ImageResponse {
         id: image.id,

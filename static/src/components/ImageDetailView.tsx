@@ -109,6 +109,11 @@ export default function ImageDetailView({
       <div className="image-detail" onClick={e => e.stopPropagation()}>
         <div className="detail-header">
           <h2>{image.target_name} - {image.filter_name || 'No filter'}</h2>
+          <div className={`status-banner ${getStatusClass()}`}>
+            {image.grading_status === GradingStatus.Accepted && '✓ ACCEPTED'}
+            {image.grading_status === GradingStatus.Rejected && '✗ REJECTED'}
+            {image.grading_status === GradingStatus.Pending && '○ PENDING'}
+          </div>
           <button className="close-button" onClick={onClose}>×</button>
         </div>
 
@@ -142,57 +147,90 @@ export default function ImageDetailView({
           <div className="detail-info">
             <div className="info-section">
               <h3>Image Information</h3>
+              
+              {/* Date on its own row */}
+              <div className="date-row">
+                <span className="date-label">Date:</span>
+                <span className="date-value">{formatDate(image.acquired_date)}</span>
+              </div>
+              
+              {/* Two-column layout for other metadata */}
               <dl>
-                <dt>Project:</dt>
-                <dd>{image.project_name}</dd>
-                <dt>Target:</dt>
-                <dd>{image.target_name}</dd>
-                <dt>Filter:</dt>
-                <dd>{image.filter_name || 'None'}</dd>
-                <dt>Date:</dt>
-                <dd>{formatDate(image.acquired_date)}</dd>
-                <dt>Status:</dt>
-                <dd className={getStatusClass()}>
-                  {image.grading_status === GradingStatus.Accepted && 'Accepted'}
-                  {image.grading_status === GradingStatus.Rejected && 'Rejected'}
-                  {image.grading_status === GradingStatus.Pending && 'Pending'}
-                </dd>
-                {image.reject_reason && (
+                {starData && (
                   <>
-                    <dt>Reject Reason:</dt>
-                    <dd>{image.reject_reason}</dd>
+                    <dt>Stars:</dt>
+                    <dd>{starData.detected_stars}</dd>
+                    <dt>Avg HFR:</dt>
+                    <dd>{starData.average_hfr.toFixed(2)}</dd>
+                    <dt>Avg FWHM:</dt>
+                    <dd>{starData.average_fwhm.toFixed(2)}</dd>
+                  </>
+                )}
+                
+                {image.metadata?.Min !== undefined && (
+                  <>
+                    <dt>Min:</dt>
+                    <dd>{typeof image.metadata.Min === 'number' ? image.metadata.Min.toFixed(0) : image.metadata.Min}</dd>
+                  </>
+                )}
+                
+                {image.metadata?.Mean !== undefined && (
+                  <>
+                    <dt>Mean:</dt>
+                    <dd>{typeof image.metadata.Mean === 'number' ? image.metadata.Mean.toFixed(1) : image.metadata.Mean}</dd>
+                  </>
+                )}
+                
+                {image.metadata?.Median !== undefined && (
+                  <>
+                    <dt>Median:</dt>
+                    <dd>{typeof image.metadata.Median === 'number' ? image.metadata.Median.toFixed(1) : image.metadata.Median}</dd>
+                  </>
+                )}
+                
+                {image.metadata?.HFR !== undefined && (
+                  <>
+                    <dt>HFR:</dt>
+                    <dd>{typeof image.metadata.HFR === 'number' ? image.metadata.HFR.toFixed(2) : image.metadata.HFR}</dd>
+                  </>
+                )}
+                
+                {image.metadata?.DetectedStars !== undefined && (
+                  <>
+                    <dt>Det. Stars:</dt>
+                    <dd>{image.metadata.DetectedStars}</dd>
+                  </>
+                )}
+                
+                {image.metadata?.Exposure !== undefined && (
+                  <>
+                    <dt>Exposure:</dt>
+                    <dd>{image.metadata.Exposure}s</dd>
+                  </>
+                )}
+                
+                {image.metadata?.Temperature !== undefined && (
+                  <>
+                    <dt>Temp:</dt>
+                    <dd>{image.metadata.Temperature}°C</dd>
+                  </>
+                )}
+                
+                {image.metadata?.Gain !== undefined && (
+                  <>
+                    <dt>Gain:</dt>
+                    <dd>{image.metadata.Gain}</dd>
                   </>
                 )}
               </dl>
+              
+              {image.reject_reason && (
+                <div className="reject-reason">
+                  <strong>Reject Reason:</strong>
+                  <p>{image.reject_reason}</p>
+                </div>
+              )}
             </div>
-
-            {starData && (
-              <div className="info-section">
-                <h3>Star Detection</h3>
-                <dl>
-                  <dt>Stars Detected:</dt>
-                  <dd>{starData.detected_stars}</dd>
-                  <dt>Average HFR:</dt>
-                  <dd>{starData.average_hfr.toFixed(2)}</dd>
-                  <dt>Average FWHM:</dt>
-                  <dd>{starData.average_fwhm.toFixed(2)}</dd>
-                </dl>
-              </div>
-            )}
-
-            {image.metadata && (
-              <div className="info-section">
-                <h3>Metadata</h3>
-                <dl>
-                  {Object.entries(image.metadata).slice(0, 10).map(([key, value]) => (
-                    <div key={key}>
-                      <dt>{key}:</dt>
-                      <dd>{String(value)}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-            )}
 
             <div className="detail-actions">
               <button 
@@ -216,10 +254,16 @@ export default function ImageDetailView({
             </div>
 
             <div className="detail-shortcuts">
-              <p><strong>Shortcuts:</strong></p>
-              <p>J/→: Next | K/←: Previous</p>
-              <p>S: Stars {showStars ? '(ON)' : '(OFF)'} | P: PSF {showPsf ? '(ON)' : '(OFF)'} | Z: Size</p>
-              <p>ESC: Close</p>
+              <div className="shortcut-grid">
+                <span>J/→ Next</span>
+                <span>K/← Prev</span>
+                <span>A Accept</span>
+                <span>R Reject</span>
+                <span>U Pending</span>
+                <span>S Stars {showStars ? '✓' : ''}</span>
+                <span>P PSF {showPsf ? '✓' : ''}</span>
+                <span>Z Size</span>
+              </div>
             </div>
           </div>
         </div>

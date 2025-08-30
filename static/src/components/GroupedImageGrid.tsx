@@ -196,8 +196,10 @@ export default function GroupedImageGrid({ projectId, targetId, useLazyImages = 
   const gradeMutation = useMutation({
     mutationFn: ({ imageId, request }: { imageId: number; request: UpdateGradeRequest }) =>
       apiClient.updateImageGrade(imageId, request),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      // Invalidate both the all-images list and the individual image queries
       queryClient.invalidateQueries({ queryKey: ['all-images'] });
+      queryClient.invalidateQueries({ queryKey: ['image', variables.imageId] });
     },
   });
 
@@ -299,13 +301,18 @@ export default function GroupedImageGrid({ projectId, targetId, useLazyImages = 
     );
 
     Promise.all(promises).then(() => {
+      // Invalidate all the individual image queries for batch updates
+      Array.from(selectedImages).forEach(imageId => {
+        queryClient.invalidateQueries({ queryKey: ['image', imageId] });
+      });
+      
       // Clear selection after batch operation
       setSelectedImages(new Set());
       setLastSelectedImageId(null);
     }).catch((error) => {
       console.error('Batch grading failed:', error);
     });
-  }, [selectedImages, gradeMutation]);
+  }, [selectedImages, gradeMutation, queryClient]);
 
   // Clear selection when filters change
   useEffect(() => {

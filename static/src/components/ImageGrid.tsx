@@ -43,8 +43,10 @@ export default function ImageGrid({ projectId, targetId }: ImageGridProps) {
   const gradeMutation = useMutation({
     mutationFn: ({ imageId, request }: { imageId: number; request: UpdateGradeRequest }) =>
       apiClient.updateImageGrade(imageId, request),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      // Invalidate both the images list and the individual image queries
       queryClient.invalidateQueries({ queryKey: ['images'] });
+      queryClient.invalidateQueries({ queryKey: ['image', variables.imageId] });
     },
   });
 
