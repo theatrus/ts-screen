@@ -80,8 +80,8 @@ export default function ImageDetailView({
 
   // Keyboard shortcuts
   useHotkeys('escape', onClose, [onClose]);
-  useHotkeys('j,right', onNext, [onNext]);
-  useHotkeys('k,left', onPrevious, [onPrevious]);
+  useHotkeys('k,right', onNext, [onNext]);
+  useHotkeys('j,left', onPrevious, [onPrevious]);
   useHotkeys('a', () => onGrade('accepted'), [onGrade]);
   useHotkeys('r', () => onGrade('rejected'), [onGrade]);
   useHotkeys('u', () => onGrade('pending'), [onGrade]);
@@ -343,8 +343,8 @@ export default function ImageDetailView({
 
             <div className="detail-shortcuts">
               <div className="shortcut-grid">
-                <span>J/→ Next</span>
-                <span>K/← Prev</span>
+                <span>K/→ Next</span>
+                <span>J/← Prev</span>
                 <span>A Accept</span>
                 <span>R Reject</span>
                 <span>U Pending</span>

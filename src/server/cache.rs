@@ -66,6 +66,7 @@ impl CacheManager {
         Ok(total_size)
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn walk_cache_dir<F>(&self, dir: &Path, callback: &mut F) -> Result<()>
     where
         F: FnMut(&std::fs::DirEntry),

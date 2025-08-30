@@ -9,8 +9,8 @@ export default function KeyboardShortcutHelp({ onClose }: KeyboardShortcutHelpPr
 
   const shortcuts = [
     { category: 'Navigation', items: [
-      { key: 'J', description: 'Next image' },
-      { key: 'K', description: 'Previous image' },
+      { key: 'K', description: 'Next image' },
+      { key: 'J', description: 'Previous image' },
       { key: '→', description: 'Next image (alternative)' },
       { key: '←', description: 'Previous image (alternative)' },
       { key: 'Enter', description: 'Open image detail view' },

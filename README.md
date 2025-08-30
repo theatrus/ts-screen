@@ -290,14 +290,17 @@ Once started, open your browser to `http://localhost:3000` (or your configured p
 - Complete metadata display (exposure, temperature, camera, statistics)
 - One-click grading with keyboard shortcuts (A=accept, R=reject, U=unmark)
 - Navigation between images with J/K or arrow keys
+- **Undo/Redo System**: Full undo/redo support for all grading actions with Ctrl+Z/Ctrl+Y
 
 **Keyboard Shortcuts**:
 - `?` - Show help modal with all shortcuts
-- `J / →` - Next image
-- `K / ←` - Previous image
+- `K / →` - Next image
+- `J / ←` - Previous image
 - `A` - Accept image
 - `R` - Reject image
 - `U` - Unmark (set to pending)
+- `Ctrl+Z / ⌘Z` - Undo last grading action
+- `Ctrl+Y / ⌘Y` - Redo last grading action
 - `S` - Toggle star overlay
 - `P` - Toggle PSF visualization
 - `Z` - Toggle image size

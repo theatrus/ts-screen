@@ -1307,8 +1307,8 @@ const gradeMutation = useMutation({
 
 **Navigation Shortcuts** (ImageDetailView.tsx):
 ```typescript
-useHotkeys('j,right', onNext, [onNext]);
-useHotkeys('k,left', onPrevious, [onPrevious]);
+useHotkeys('k,right', onNext, [onNext]);
+useHotkeys('j,left', onPrevious, [onPrevious]);
 useHotkeys('escape', onClose, [onClose]);
 ```
 
@@ -1317,6 +1317,88 @@ useHotkeys('escape', onClose, [onClose]);
 useHotkeys('a', () => onGrade('accepted'), [onGrade]);
 useHotkeys('r', () => onGrade('rejected'), [onGrade]);
 useHotkeys('u', () => onGrade('pending'), [onGrade]);
+```
+
+**Undo/Redo System** (2025-08-30):
+
+The application includes a comprehensive undo/redo system for all grading actions:
+
+**src/hooks/useUndoRedo.ts**:
+```typescript
+export interface GradingAction {
+  id: string;
+  type: 'single' | 'batch';
+  timestamp: number;
+  description: string;
+  imageIds: number[];
+  previousStates: Array<{
+    imageId: number;
+    previousStatus: 'accepted' | 'rejected' | 'pending';
+    previousReason?: string;
+  }>;
+  newStatus: 'accepted' | 'rejected' | 'pending';
+  newReason?: string;
+}
+
+export function useUndoRedo(options: UseUndoRedoOptions = {}) {
+  // Track action history with undo/redo stacks
+  const [undoStack, setUndoStack] = useState<GradingAction[]>([]);
+  const [redoStack, setRedoStack] = useState<GradingAction[]>([]);
+  
+  return {
+    recordAction: (imageIds, newStatus, reason, description) => Promise<string | null>
+    undo: () => Promise<boolean>
+    redo: () => Promise<boolean>
+    canUndo: boolean
+    canRedo: boolean
+  };
+}
+```
+
+**Key Features**:
+1. **Action Recording**: Automatically captures previous states before applying changes
+2. **Batch Support**: Single operations and multi-image batch operations are both fully supported
+3. **History Management**: Configurable history size (default: 50 actions) with automatic cleanup
+4. **State Restoration**: Precise restoration of previous grading states and reasons
+5. **Cache Integration**: Automatic query invalidation when undoing/redoing actions
+
+**src/hooks/useGrading.ts**:
+```typescript
+export function useGrading(options: UseGradingOptions = {}) {
+  const undoRedo = useUndoRedo();
+
+  const gradeImage = useCallback((imageId, status, reason, recordHistory = true) => {
+    // Record action before applying if history tracking is enabled
+    if (recordHistory) {
+      await undoRedo.recordAction([imageId], status, reason);
+    }
+    // Apply the grading change
+    await apiClient.updateImageGrade(imageId, { status, reason });
+  }, [undoRedo]);
+
+  return {
+    gradeImage, gradeBatch, gradeImages,
+    undo: undoRedo.undo,
+    redo: undoRedo.redo,
+    canUndo: undoRedo.canUndo,
+    canRedo: undoRedo.canRedo,
+  };
+}
+```
+
+**UI Integration** (src/components/UndoRedoToolbar.tsx):
+- Visual undo/redo buttons with action counts
+- Tooltips showing the last/next action descriptions
+- Keyboard shortcuts: `Ctrl+Z`/`Cmd+Z` (undo), `Ctrl+Y`/`Cmd+Y` (redo)
+- Real-time feedback with success/error animations
+- Compact and full display modes for different UI contexts
+
+**Technical Implementation**:
+- **Action History**: Each action stores complete state snapshots for reliable restoration
+- **Optimistic Updates**: UI updates immediately while background operations ensure consistency  
+- **Error Handling**: Failed undo/redo operations are gracefully handled without corrupting stacks
+- **Memory Management**: History size limits and automatic cleanup prevent memory leaks
+- **Concurrent Safety**: Action recording prevents race conditions during rapid user input
 ```
 
 **View Toggle Shortcuts**:

@@ -305,8 +305,8 @@ export default function GroupedImageGrid({ projectId, targetId, useLazyImages = 
   }, [filters]);
 
   // Keyboard shortcuts
-  useHotkeys('j', () => navigateImages('next'), [navigateImages]);
-  useHotkeys('k', () => navigateImages('prev'), [navigateImages]);
+  useHotkeys('k', () => navigateImages('next'), [navigateImages]);
+  useHotkeys('j', () => navigateImages('prev'), [navigateImages]);
   useHotkeys('a', () => {
     if (selectedImages.size > 1) {
       gradeBatch('accepted');

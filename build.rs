@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() {
@@ -170,7 +170,7 @@ fn build_react_app() {
     }
 }
 
-fn is_dist_newer_than_sources(static_dir: &PathBuf, dist_dir: &PathBuf) -> bool {
+fn is_dist_newer_than_sources(static_dir: &Path, dist_dir: &Path) -> bool {
     use std::fs;
 
     // Get the modification time of the dist directory
