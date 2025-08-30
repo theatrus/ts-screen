@@ -7,16 +7,13 @@ import { GradingStatus } from '../api/types';
 import ImageCard from './ImageCard';
 import LazyImageCard from './LazyImageCard';
 import ImageDetailView from './ImageDetailView';
+import FilterControls, { type FilterOptions } from './FilterControls';
 
 interface ImageGridProps {
   projectId: number;
   targetId: number | null;
 }
 
-interface ImageGroup {
-  filterName: string;
-  images: Image[];
-}
 
 type GroupingMode = 'filter' | 'date' | 'both';
 
@@ -33,6 +30,12 @@ export default function GroupedImageGrid({ projectId, targetId, useLazyImages = 
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [imageSize, setImageSize] = useState(300); // Default thumbnail size
   const [groupingMode, setGroupingMode] = useState<GroupingMode>('filter');
+  const [filters, setFilters] = useState<FilterOptions>({
+    status: 'all',
+    filterName: 'all',
+    dateRange: { start: null, end: null },
+    searchTerm: '',
+  });
   const gridRef = useRef<HTMLDivElement>(null);
 
   // Fetch ALL images (no pagination for grouping)
@@ -45,11 +48,55 @@ export default function GroupedImageGrid({ projectId, targetId, useLazyImages = 
     }),
   });
 
+  // Filter images based on current filters
+  const filteredImages = useMemo(() => {
+    return allImages.filter(image => {
+      // Status filter
+      if (filters.status !== 'all' && image.grading_status !== filters.status) {
+        return false;
+      }
+      
+      // Filter name filter
+      if (filters.filterName !== 'all' && image.filter_name !== filters.filterName) {
+        return false;
+      }
+      
+      // Date range filter
+      if (filters.dateRange.start && image.acquired_date) {
+        const imageDate = new Date(image.acquired_date * 1000);
+        if (imageDate < filters.dateRange.start) return false;
+      }
+      if (filters.dateRange.end && image.acquired_date) {
+        const imageDate = new Date(image.acquired_date * 1000);
+        if (imageDate > filters.dateRange.end) return false;
+      }
+      
+      // Search filter
+      if (filters.searchTerm) {
+        const searchLower = filters.searchTerm.toLowerCase();
+        if (!image.target_name.toLowerCase().includes(searchLower)) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
+  }, [allImages, filters]);
+  
+  // Get available filter names from all images (not just filtered)
+  const availableFilters = useMemo(() => {
+    const filterSet = new Set<string>();
+    allImages.forEach(img => {
+      if (img.filter_name) filterSet.add(img.filter_name);
+    });
+    return Array.from(filterSet).sort();
+  }, [allImages]);
+
   // Group images based on selected mode
   const imageGroups = useMemo(() => {
     const groups = new Map<string, Image[]>();
     
-    allImages.forEach(image => {
+    filteredImages.forEach(image => {
       let groupKey: string;
       
       if (groupingMode === 'filter') {
@@ -101,7 +148,7 @@ export default function GroupedImageGrid({ projectId, targetId, useLazyImages = 
     }
     
     return sorted;
-  }, [allImages, groupingMode]);
+  }, [filteredImages, groupingMode]);
 
   // Initialize expanded groups when imageGroups change
   useEffect(() => {
@@ -218,6 +265,10 @@ export default function GroupedImageGrid({ projectId, targetId, useLazyImages = 
     <>
       <div className="grouped-image-container">
         <div className="image-controls">
+          <FilterControls 
+            onFilterChange={setFilters}
+            availableFilters={availableFilters}
+          />
           <div className="control-row">
             <div className="size-control">
               <label>Image Size:</label>
@@ -244,7 +295,10 @@ export default function GroupedImageGrid({ projectId, targetId, useLazyImages = 
             </div>
           </div>
           <div className="group-stats">
-            Total: {allImages.length} images in {imageGroups.length} groups
+            Total: {filteredImages.length} of {allImages.length} images in {imageGroups.length} groups
+            {filters.status !== 'all' && ` (${filters.status})`}
+            {filters.filterName !== 'all' && ` (${filters.filterName})`}
+            {filters.searchTerm && ` (searching: ${filters.searchTerm})`}
           </div>
         </div>
 

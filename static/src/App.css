@@ -581,6 +581,177 @@
   color: #666;
 }
 
+/* Statistics Dashboard */
+.stats-dashboard {
+  background: #252525;
+  border-radius: 8px;
+  padding: 2rem;
+  margin: 2rem 0;
+}
+
+.stats-dashboard h2 {
+  margin: 0 0 2rem 0;
+  color: #61dafb;
+  font-size: 1.5rem;
+}
+
+.stats-summary {
+  margin-bottom: 3rem;
+}
+
+.stats-summary h3 {
+  margin: 0 0 1rem 0;
+  color: #61dafb;
+  font-size: 1.2rem;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.stat-card {
+  background: #1e1e1e;
+  border: 2px solid #333;
+  border-radius: 8px;
+  padding: 1.5rem;
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.stat-card.accepted {
+  border-color: #4caf50;
+}
+
+.stat-card.rejected {
+  border-color: #f44336;
+}
+
+.stat-card.pending {
+  border-color: #ff9800;
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+  color: #e0e0e0;
+}
+
+.stat-card.accepted .stat-value {
+  color: #4caf50;
+}
+
+.stat-card.rejected .stat-value {
+  color: #f44336;
+}
+
+.stat-card.pending .stat-value {
+  color: #ff9800;
+}
+
+.stat-label {
+  font-size: 0.9rem;
+  color: #999;
+  font-weight: 500;
+}
+
+.stat-percentage {
+  font-size: 0.8rem;
+  color: #ccc;
+  margin-top: 0.25rem;
+}
+
+.target-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.target-stats h3 {
+  margin: 0 0 1.5rem 0;
+  color: #61dafb;
+  font-size: 1.2rem;
+}
+
+.target-section {
+  background: #1e1e1e;
+  border-radius: 8px;
+  padding: 1.5rem;
+  border: 1px solid #333;
+}
+
+.target-section h4 {
+  margin: 0 0 1rem 0;
+  color: #61dafb;
+  font-size: 1.1rem;
+}
+
+.target-summary {
+  display: flex;
+  gap: 2rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.stat-item {
+  font-size: 0.9rem;
+}
+
+.stat-item.accepted {
+  color: #4caf50;
+}
+
+.stat-item.rejected {
+  color: #f44336;
+}
+
+.stat-item.pending {
+  color: #ff9800;
+}
+
+.filter-stats h5 {
+  margin: 0 0 1rem 0;
+  color: #999;
+  font-size: 1rem;
+}
+
+.filter-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.filter-table th,
+.filter-table td {
+  padding: 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid #333;
+}
+
+.filter-table th {
+  color: #999;
+  font-weight: 500;
+  background: #2a2a2a;
+}
+
+.filter-table td {
+  color: #e0e0e0;
+}
+
+.filter-table td.accepted {
+  color: #4caf50;
+}
+
+.filter-table td.rejected {
+  color: #f44336;
+}
+
+.filter-table td.pending {
+  color: #ff9800;
+}
+
 /* Grouped Image Grid */
 .grouped-image-container {
   width: 100%;
@@ -594,6 +765,90 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+/* Filter Controls */
+.filter-controls {
+  width: 100%;
+}
+
+.filter-row {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+  min-height: 40px;
+}
+
+.filter-input-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.filter-input-group label {
+  color: #999;
+  font-weight: 500;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.filter-input-group select,
+.filter-input-group input[type="date"],
+.filter-input-group input[type="text"] {
+  background: #333;
+  color: #e0e0e0;
+  border: 1px solid #444;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+}
+
+.filter-input-group select:hover,
+.filter-input-group input[type="date"]:hover,
+.filter-input-group input[type="text"]:hover {
+  border-color: #555;
+}
+
+.filter-input-group select:focus,
+.filter-input-group input[type="date"]:focus,
+.filter-input-group input[type="text"]:focus {
+  outline: none;
+  border-color: #61dafb;
+  box-shadow: 0 0 0 2px rgba(97, 218, 251, 0.2);
+}
+
+.filter-input-group input[type="text"] {
+  min-width: 160px;
+  max-width: 200px;
+}
+
+.filter-input-group input[type="date"] {
+  min-width: 130px;
+  max-width: 150px;
+}
+
+.reset-button {
+  background: #444;
+  color: #e0e0e0;
+  border: 1px solid #555;
+  padding: 0.4rem 1rem;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.reset-button:hover {
+  background: #555;
+  border-color: #666;
+}
+
+.reset-button:active {
+  background: #333;
 }
 
 .control-row {

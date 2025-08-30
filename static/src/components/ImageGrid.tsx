@@ -3,8 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useInView } from 'react-intersection-observer';
 import { apiClient } from '../api/client';
-import type { Image, UpdateGradeRequest } from '../api/types';
-import { GradingStatus } from '../api/types';
+import type { UpdateGradeRequest } from '../api/types';
 import ImageCard from './ImageCard';
 import ImageDetailView from './ImageDetailView';
 
@@ -75,12 +74,6 @@ export default function ImageGrid({ projectId, targetId }: ImageGridProps) {
 
   const gradeImage = useCallback((status: 'accepted' | 'rejected' | 'pending') => {
     if (!selectedImageId) return;
-
-    const statusMap = {
-      accepted: GradingStatus.Accepted,
-      rejected: GradingStatus.Rejected,
-      pending: GradingStatus.Pending,
-    };
 
     gradeMutation.mutate({
       imageId: selectedImageId,

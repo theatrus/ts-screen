@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
-import type { Project, Target } from '../api/types';
 
 interface ProjectTargetSelectorProps {
   selectedProjectId: number | null;

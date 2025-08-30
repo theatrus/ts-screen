@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { apiClient } from '../api/client';
-import type { Image } from '../api/types';
 import { GradingStatus } from '../api/types';
 import { useImagePreloader } from '../hooks/useImagePreloader';
 
