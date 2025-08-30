@@ -13,12 +13,14 @@ export function useImagePreloader(
   options: {
     preloadCount?: number;
     includeAnnotated?: boolean;
+    includeStarData?: boolean;
     imageSize?: 'screen' | 'large';
   } = {}
 ) {
   const { 
     preloadCount = 3, 
     includeAnnotated = false,
+    includeStarData = false,
     imageSize = 'large'
   } = options;
 
@@ -55,18 +57,20 @@ export function useImagePreloader(
       }
     });
 
-    // Also preload star detection data
-    imagesToPreload.forEach(imageId => {
-      // This will trigger the React Query cache
-      apiClient.getStarDetection(imageId).catch(() => {
-        // Ignore errors for preloading
+    // Optionally preload star detection data
+    if (includeStarData) {
+      imagesToPreload.forEach(imageId => {
+        // This will trigger the React Query cache
+        apiClient.getStarDetection(imageId).catch(() => {
+          // Ignore errors for preloading
+        });
       });
-    });
+    }
 
     return () => {
       // No cleanup needed for image preloading
     };
-  }, [currentImageId, nextImageIds, preloadCount, includeAnnotated, imageSize]);
+  }, [currentImageId, nextImageIds, preloadCount, includeAnnotated, includeStarData, imageSize]);
 }
 
 /**

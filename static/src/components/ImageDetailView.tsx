@@ -61,6 +61,7 @@ export default function ImageDetailView({
   useImagePreloader(imageId, nextImageIds, {
     preloadCount: 2,
     includeAnnotated: showStars,
+    includeStarData: showStars,
     imageSize: imageSize,
   });
 

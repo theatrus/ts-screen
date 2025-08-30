@@ -1237,13 +1237,15 @@ export interface UseImageZoomReturn {
 interface UseImagePreloaderOptions {
   preloadCount: number;
   includeAnnotated: boolean;
+  includeStarData: boolean;
   imageSize: 'screen' | 'large';
 }
 ```
 - Intelligent preloading of next/previous images for smooth navigation
-- Preloads both regular and annotated versions based on current view mode
+- Conditionally preloads annotated images only when star overlay is enabled
+- Conditionally preloads star detection data only when needed
 - Configurable preload count and size variants
-- Cache-aware to avoid duplicate network requests
+- Cache-aware to avoid duplicate network requests and bandwidth waste
 
 #### State Management
 
