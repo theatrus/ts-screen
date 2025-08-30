@@ -17,9 +17,9 @@ export default function KeyboardShortcutHelp({ onClose }: KeyboardShortcutHelpPr
       { key: 'ESC', description: 'Close detail view / modal' },
     ]},
     { category: 'Grading', items: [
-      { key: 'A', description: 'Accept image' },
-      { key: 'R', description: 'Reject image' },
-      { key: 'U', description: 'Unmark image (set to pending)' },
+      { key: 'A', description: 'Accept image (or batch if multiple selected)' },
+      { key: 'R', description: 'Reject image (or batch if multiple selected)' },
+      { key: 'U', description: 'Unmark image (or batch if multiple selected)' },
     ]},
     { category: 'View Options', items: [
       { key: 'S', description: 'Toggle star detection overlay' },
@@ -28,10 +28,14 @@ export default function KeyboardShortcutHelp({ onClose }: KeyboardShortcutHelpPr
       { key: 'G', description: 'Cycle grouping mode (Filter → Date → Both)' },
       { key: '?', description: 'Show this help' },
     ]},
+    { category: 'Batch Selection', items: [
+      { key: 'Shift+Click', description: 'Select range of images' },
+      { key: 'Ctrl+Click', description: 'Toggle individual image selection' },
+      { key: 'ESC', description: 'Clear all selections' },
+    ]},
     { category: 'Future Features', items: [
       { key: 'Ctrl+Z', description: 'Undo last action (coming soon)' },
       { key: 'Ctrl+Y', description: 'Redo last action (coming soon)' },
-      { key: 'Shift+Click', description: 'Select multiple images (coming soon)' },
     ]},
   ];
 

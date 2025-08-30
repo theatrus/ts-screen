@@ -8,6 +8,7 @@ import ImageCard from './ImageCard';
 import LazyImageCard from './LazyImageCard';
 import ImageDetailView from './ImageDetailView';
 import FilterControls, { type FilterOptions } from './FilterControls';
+import StatsDashboard from './StatsDashboard';
 
 interface ImageGridProps {
   projectId: number;
@@ -19,9 +20,10 @@ type GroupingMode = 'filter' | 'date' | 'both';
 
 interface GroupedImageGridProps extends ImageGridProps {
   useLazyImages?: boolean;
+  showStats?: boolean;
 }
 
-export default function GroupedImageGrid({ projectId, targetId, useLazyImages = false }: GroupedImageGridProps) {
+export default function GroupedImageGrid({ projectId, targetId, useLazyImages = false, showStats = false }: GroupedImageGridProps) {
   const queryClient = useQueryClient();
   const [selectedGroupIndex, setSelectedGroupIndex] = useState(0);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
@@ -36,6 +38,8 @@ export default function GroupedImageGrid({ projectId, targetId, useLazyImages = 
     dateRange: { start: null, end: null },
     searchTerm: '',
   });
+  const [selectedImages, setSelectedImages] = useState<Set<number>>(new Set());
+  const [lastSelectedImageId, setLastSelectedImageId] = useState<number | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   // Fetch ALL images (no pagination for grouping)
@@ -238,14 +242,108 @@ export default function GroupedImageGrid({ projectId, targetId, useLazyImages = 
     });
   }, []);
 
+  // Handle image selection with shift+click support
+  const handleImageSelection = useCallback((imageId: number, groupIndex: number, indexInGroup: number, event: React.MouseEvent) => {
+    if (event.shiftKey && lastSelectedImageId) {
+      // Shift+click: select range
+      const startIndex = flatImages.findIndex(item => item.image.id === lastSelectedImageId);
+      const endIndex = flatImages.findIndex(item => item.image.id === imageId);
+      
+      if (startIndex !== -1 && endIndex !== -1) {
+        const [minIndex, maxIndex] = [Math.min(startIndex, endIndex), Math.max(startIndex, endIndex)];
+        const newSelections = new Set<number>();
+        
+        for (let i = minIndex; i <= maxIndex; i++) {
+          newSelections.add(flatImages[i].image.id);
+        }
+        
+        setSelectedImages(prev => {
+          const next = new Set(prev);
+          newSelections.forEach(id => next.add(id));
+          return next;
+        });
+      }
+    } else if (event.ctrlKey || event.metaKey) {
+      // Ctrl+click: toggle selection
+      setSelectedImages(prev => {
+        const next = new Set(prev);
+        if (next.has(imageId)) {
+          next.delete(imageId);
+        } else {
+          next.add(imageId);
+        }
+        return next;
+      });
+      setLastSelectedImageId(imageId);
+    } else {
+      // Regular click: single selection for navigation
+      setSelectedGroupIndex(groupIndex);
+      setSelectedImageIndex(indexInGroup);
+      setSelectedImageId(imageId);
+      setLastSelectedImageId(imageId);
+      
+      // Clear multi-selection
+      setSelectedImages(new Set([imageId]));
+    }
+  }, [flatImages, lastSelectedImageId]);
+
+  // Batch grading functions
+  const gradeBatch = useCallback((status: 'accepted' | 'rejected' | 'pending') => {
+    if (selectedImages.size === 0) return;
+
+    const promises = Array.from(selectedImages).map(imageId =>
+      gradeMutation.mutateAsync({
+        imageId,
+        request: { status },
+      })
+    );
+
+    Promise.all(promises).then(() => {
+      // Clear selection after batch operation
+      setSelectedImages(new Set());
+      setLastSelectedImageId(null);
+    }).catch((error) => {
+      console.error('Batch grading failed:', error);
+    });
+  }, [selectedImages, gradeMutation]);
+
+  // Clear selection when filters change
+  useEffect(() => {
+    setSelectedImages(new Set());
+    setLastSelectedImageId(null);
+  }, [filters]);
+
   // Keyboard shortcuts
   useHotkeys('j', () => navigateImages('next'), [navigateImages]);
   useHotkeys('k', () => navigateImages('prev'), [navigateImages]);
-  useHotkeys('a', () => gradeImage('accepted'), [gradeImage]);
-  useHotkeys('r', () => gradeImage('rejected'), [gradeImage]);
-  useHotkeys('u', () => gradeImage('pending'), [gradeImage]);
+  useHotkeys('a', () => {
+    if (selectedImages.size > 1) {
+      gradeBatch('accepted');
+    } else {
+      gradeImage('accepted');
+    }
+  }, [gradeImage, gradeBatch, selectedImages.size]);
+  useHotkeys('r', () => {
+    if (selectedImages.size > 1) {
+      gradeBatch('rejected');
+    } else {
+      gradeImage('rejected');
+    }
+  }, [gradeImage, gradeBatch, selectedImages.size]);
+  useHotkeys('u', () => {
+    if (selectedImages.size > 1) {
+      gradeBatch('pending');
+    } else {
+      gradeImage('pending');
+    }
+  }, [gradeImage, gradeBatch, selectedImages.size]);
   useHotkeys('enter', () => setShowDetail(true), []);
-  useHotkeys('escape', () => setShowDetail(false), []);
+  useHotkeys('escape', () => {
+    setShowDetail(false);
+    // Also clear selection on escape
+    setSelectedImages(new Set());
+    setLastSelectedImageId(null);
+  }, []);
   
   // Grouping mode shortcuts
   useHotkeys('g', () => {
@@ -299,8 +397,50 @@ export default function GroupedImageGrid({ projectId, targetId, useLazyImages = 
             {filters.status !== 'all' && ` (${filters.status})`}
             {filters.filterName !== 'all' && ` (${filters.filterName})`}
             {filters.searchTerm && ` (searching: ${filters.searchTerm})`}
+            {selectedImages.size > 0 && ` • ${selectedImages.size} selected`}
           </div>
+          
+          {selectedImages.size > 1 && (
+            <div className="batch-actions">
+              <div className="batch-info">
+                {selectedImages.size} images selected - Use keyboard shortcuts (A/R/U) or click buttons below:
+              </div>
+              <div className="batch-buttons">
+                <button 
+                  className="action-button accept"
+                  onClick={() => gradeBatch('accepted')}
+                >
+                  Accept Selected ({selectedImages.size})
+                </button>
+                <button 
+                  className="action-button reject"
+                  onClick={() => gradeBatch('rejected')}
+                >
+                  Reject Selected ({selectedImages.size})
+                </button>
+                <button 
+                  className="action-button pending"
+                  onClick={() => gradeBatch('pending')}
+                >
+                  Mark Pending ({selectedImages.size})
+                </button>
+                <button 
+                  className="action-button"
+                  onClick={() => {
+                    setSelectedImages(new Set());
+                    setLastSelectedImageId(null);
+                  }}
+                >
+                  Clear Selection
+                </button>
+              </div>
+            </div>
+          )}
         </div>
+
+        {showStats && (
+          <StatsDashboard images={filteredImages} />
+        )}
 
         <div className="image-groups" ref={gridRef}>
           {imageGroups.map((group, groupIndex) => {
@@ -338,20 +478,26 @@ export default function GroupedImageGrid({ projectId, targetId, useLazyImages = 
                     {group.images.map((image, indexInGroup) => {
                       const CardComponent = useLazyImages ? LazyImageCard : ImageCard;
                       return (
-                        <CardComponent
+                        <div
                           key={image.id}
-                          image={image}
-                          isSelected={
+                          className={`image-card-wrapper ${
+                            selectedImages.has(image.id) ? 'multi-selected' : ''
+                          } ${
                             selectedGroupIndex === groupIndex && 
-                            selectedImageIndex === indexInGroup
-                          }
-                          onClick={() => {
-                            setSelectedGroupIndex(groupIndex);
-                            setSelectedImageIndex(indexInGroup);
-                            setSelectedImageId(image.id);
-                          }}
-                          onDoubleClick={() => setShowDetail(true)}
-                        />
+                            selectedImageIndex === indexInGroup ? 'current-selection' : ''
+                          }`}
+                        >
+                          <CardComponent
+                            image={image}
+                            isSelected={
+                              selectedImages.has(image.id) || 
+                              (selectedGroupIndex === groupIndex && 
+                               selectedImageIndex === indexInGroup)
+                            }
+                            onClick={(event) => handleImageSelection(image.id, groupIndex, indexInGroup, event)}
+                            onDoubleClick={() => setShowDetail(true)}
+                          />
+                        </div>
                       );
                     })}
                   </div>

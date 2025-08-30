@@ -7,7 +7,7 @@ import { apiClient } from '../api/client';
 interface LazyImageCardProps {
   image: Image;
   isSelected: boolean;
-  onClick: () => void;
+  onClick: (event: React.MouseEvent) => void;
   onDoubleClick: () => void;
 }
 

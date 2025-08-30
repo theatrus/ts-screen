@@ -851,6 +851,84 @@
   background: #333;
 }
 
+/* Batch Actions */
+.batch-actions {
+  background: #1e1e1e;
+  border: 2px solid #61dafb;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1rem;
+  animation: batch-appear 0.2s ease-in;
+}
+
+@keyframes batch-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.batch-info {
+  color: #61dafb;
+  font-weight: 500;
+  margin-bottom: 0.75rem;
+  text-align: center;
+}
+
+.batch-buttons {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.batch-buttons .action-button {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  min-width: 120px;
+}
+
+/* Enhanced selection indicators */
+.image-card-wrapper {
+  position: relative;
+}
+
+.image-card-wrapper.multi-selected .image-card {
+  border-color: #ff9800;
+  box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.4);
+  transform: scale(0.98);
+}
+
+.image-card-wrapper.current-selection .image-card {
+  border-color: #61dafb;
+  box-shadow: 0 0 0 3px rgba(97, 218, 251, 0.5);
+  transform: scale(1.02);
+}
+
+/* Selection count indicator */
+.image-card-wrapper.multi-selected::after {
+  content: "✓";
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: #ff9800;
+  color: white;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  z-index: 10;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
 .control-row {
   display: flex;
   justify-content: space-between;

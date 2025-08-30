@@ -9,6 +9,7 @@ function App() {
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [selectedTargetId, setSelectedTargetId] = useState<number | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [showStats, setShowStats] = useState(false);
 
   // Keyboard shortcut for help
   useHotkeys('?', () => setShowHelp(true), []);
@@ -18,6 +19,9 @@ function App() {
       <header className="app-header">
         <h1>PSF Guard - Image Grading</h1>
         <div className="header-actions">
+          <button onClick={() => setShowStats(!showStats)} className="help-button">
+            {showStats ? 'Hide Stats' : 'Show Stats'}
+          </button>
           <button onClick={() => setShowHelp(true)} className="help-button">
             Help (?)
           </button>
@@ -39,6 +43,7 @@ function App() {
             projectId={selectedProjectId}
             targetId={selectedTargetId}
             useLazyImages={true}
+            showStats={showStats}
           />
         )}
         {!selectedProjectId && (

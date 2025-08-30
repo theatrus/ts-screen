@@ -6,7 +6,7 @@ import { apiClient } from '../api/client';
 interface ImageCardProps {
   image: Image;
   isSelected: boolean;
-  onClick: () => void;
+  onClick: (event: React.MouseEvent) => void;
   onDoubleClick: () => void;
 }
 
