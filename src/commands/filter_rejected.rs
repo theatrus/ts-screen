@@ -258,7 +258,7 @@ fn process_file_movement(
     Ok(true)
 }
 
-fn get_possible_paths(
+pub fn get_possible_paths(
     base_dir: &str,
     date_str: &str,
     target_name: &str,
@@ -303,7 +303,7 @@ fn get_possible_paths(
     ]
 }
 
-fn find_file_recursive(base_dir: &str, filename: &str) -> Result<Option<PathBuf>> {
+pub fn find_file_recursive(base_dir: &str, filename: &str) -> Result<Option<PathBuf>> {
     fn search_dir(dir: &Path, filename: &str) -> Result<Option<PathBuf>> {
         // Skip certain directories to avoid infinite loops or unwanted areas
         if let Some(dir_name) = dir.file_name() {

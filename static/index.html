@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PSF Guard API</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            line-height: 1.6;
+        }
+        h1 { color: #333; }
+        .endpoint {
+            background: #f4f4f4;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 5px;
+            font-family: monospace;
+        }
+        .method {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            border-radius: 3px;
+            color: white;
+            font-size: 0.8rem;
+            margin-right: 0.5rem;
+        }
+        .get { background: #61affe; }
+        .put { background: #fca130; }
+    </style>
+</head>
+<body>
+    <h1>PSF Guard API Server</h1>
+    <p>Welcome to the PSF Guard API server. This server provides REST APIs for astronomical image analysis.</p>
+    
+    <h2>Available Endpoints</h2>
+    
+    <div class="endpoint">
+        <span class="method get">GET</span>
+        <strong>/api/projects</strong>
+        <p>List all projects in the database</p>
+    </div>
+    
+    <div class="endpoint">
+        <span class="method get">GET</span>
+        <strong>/api/projects/{project_id}/targets</strong>
+        <p>List all targets for a specific project</p>
+    </div>
+    
+    <div class="endpoint">
+        <span class="method get">GET</span>
+        <strong>/api/images</strong>
+        <p>List images with optional filters (project_id, target_id, status)</p>
+    </div>
+    
+    <div class="endpoint">
+        <span class="method get">GET</span>
+        <strong>/api/images/{image_id}</strong>
+        <p>Get detailed information about a specific image</p>
+    </div>
+    
+    <div class="endpoint">
+        <span class="method get">GET</span>
+        <strong>/api/images/{image_id}/preview</strong>
+        <p>Get a stretched PNG preview of the FITS image</p>
+        <p>Query params: size (screen/large), stretch, midtone, shadow</p>
+    </div>
+    
+    <div class="endpoint">
+        <span class="method get">GET</span>
+        <strong>/api/images/{image_id}/stars</strong>
+        <p>Get star detection results for the image</p>
+    </div>
+    
+    <div class="endpoint">
+        <span class="method put">PUT</span>
+        <strong>/api/images/{image_id}/grade</strong>
+        <p>Update the grading status of an image</p>
+        <p>Body: { "status": "accepted|rejected|pending", "reason": "optional reason" }</p>
+    </div>
+    
+    <p><em>More endpoints coming soon: annotated images, PSF visualizations</em></p>
+</body>
+</html>
