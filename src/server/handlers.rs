@@ -86,8 +86,8 @@ pub async fn get_images(
     let filtered_images: Vec<_> = images
         .into_iter()
         .filter(|(img, _, _)| {
-            params.project_id.map_or(true, |id| img.project_id == id)
-                && params.target_id.map_or(true, |id| img.target_id == id)
+            params.project_id.is_none_or(|id| img.project_id == id)
+                && params.target_id.is_none_or(|id| img.target_id == id)
         })
         .collect();
 
@@ -201,7 +201,7 @@ pub async fn get_image_preview(
     use crate::server::cache::CacheManager;
 
     // Get image metadata from database
-    let (image, file_only) = {
+    let (image, file_only, target_name) = {
         let conn = state.db();
         let conn = conn.lock().map_err(|_| AppError::DatabaseError)?;
         let db = Database::new(&conn);
@@ -212,6 +212,14 @@ pub async fn get_image_preview(
             .map_err(|_| AppError::DatabaseError)?;
 
         let image = images.into_iter().next().ok_or(AppError::NotFound)?;
+
+        // Get target name
+        let targets = db
+            .get_targets_by_ids(&[image.target_id])
+            .map_err(|_| AppError::DatabaseError)?;
+
+        let target = targets.into_iter().next().ok_or(AppError::NotFound)?;
+        let target_name = target.name.clone();
 
         // Extract filename from metadata
         let metadata: serde_json::Value = serde_json::from_str(&image.metadata)
@@ -224,11 +232,11 @@ pub async fn get_image_preview(
         // Extract just the filename from the full path
         let file_only = filename
             .split(&['\\', '/'][..])
-            .last()
+            .next_back()
             .ok_or_else(|| AppError::BadRequest("Invalid filename format".to_string()))?
             .to_string();
 
-        (image, file_only)
+        (image, file_only, target_name)
     }; // Connection is dropped here
 
     // Determine cache parameters
@@ -276,7 +284,7 @@ pub async fn get_image_preview(
     }
 
     // Find the FITS file
-    let fits_path = find_fits_file(&state, &image, &file_only)?;
+    let fits_path = find_fits_file(&state, &image, &target_name, &file_only)?;
 
     // Load FITS file (just to verify it exists and is valid)
     let _fits = FitsImage::from_file(&fits_path)
@@ -326,6 +334,7 @@ pub async fn get_image_preview(
 fn find_fits_file(
     state: &AppState,
     image: &crate::models::AcquiredImage,
+    target_name: &str,
     filename: &str,
 ) -> Result<std::path::PathBuf, AppError> {
     use crate::commands::filter_rejected::{find_file_recursive, get_possible_paths};
@@ -337,10 +346,6 @@ fn find_fits_file(
         .ok_or_else(|| AppError::BadRequest("Invalid date".to_string()))?;
 
     let date_str = acquired_date.format("%Y-%m-%d").to_string();
-
-    // Get target name - we'll need to query for it
-    // For now, use a placeholder
-    let target_name = "target"; // TODO: Get actual target name
 
     // Try to find the file in different possible locations
     let possible_paths = get_possible_paths(
@@ -371,12 +376,12 @@ pub async fn get_image_stars(
     Path(image_id): Path<i32>,
 ) -> Result<Json<ApiResponse<StarDetectionResponse>>, AppError> {
     use crate::hocus_focus_star_detection::{detect_stars_hocus_focus, HocusFocusParams};
-    use crate::psf_fitting::PSFType;
     use crate::image_analysis::FitsImage;
+    use crate::psf_fitting::PSFType;
     use crate::server::cache::CacheManager;
 
     // Get image metadata from database
-    let (image, file_only) = {
+    let (image, file_only, target_name) = {
         let conn = state.db();
         let conn = conn.lock().map_err(|_| AppError::DatabaseError)?;
         let db = Database::new(&conn);
@@ -387,6 +392,14 @@ pub async fn get_image_stars(
 
         let image = images.into_iter().next().ok_or(AppError::NotFound)?;
 
+        // Get target name
+        let targets = db
+            .get_targets_by_ids(&[image.target_id])
+            .map_err(|_| AppError::DatabaseError)?;
+
+        let target = targets.into_iter().next().ok_or(AppError::NotFound)?;
+        let target_name = target.name.clone();
+
         let metadata: serde_json::Value = serde_json::from_str(&image.metadata)
             .map_err(|_| AppError::BadRequest("Invalid metadata".to_string()))?;
 
@@ -396,11 +409,11 @@ pub async fn get_image_stars(
 
         let file_only = filename
             .split(&['\\', '/'][..])
-            .last()
+            .next_back()
             .ok_or_else(|| AppError::BadRequest("Invalid filename format".to_string()))?
             .to_string();
 
-        (image, file_only)
+        (image, file_only, target_name)
     };
 
     // Create cache key for star detection results
@@ -425,7 +438,7 @@ pub async fn get_image_stars(
     }
 
     // Find and load the FITS file
-    let fits_path = find_fits_file(&state, &image, &file_only)?;
+    let fits_path = find_fits_file(&state, &image, &target_name, &file_only)?;
     let fits = FitsImage::from_file(&fits_path)
         .map_err(|e| AppError::InternalError(format!("Failed to load FITS: {}", e)))?;
 
@@ -447,7 +460,7 @@ pub async fn get_image_stars(
             } else {
                 0.0
             };
-            
+
             StarInfo {
                 x: star.position.0,
                 y: star.position.1,
@@ -477,12 +490,178 @@ pub async fn get_image_stars(
     Ok(Json(ApiResponse::success(response)))
 }
 
+#[axum::debug_handler]
 pub async fn get_annotated_image(
-    State(_state): State<Arc<AppState>>,
-    Path(_image_id): Path<i32>,
-) -> Result<Response, AppError> {
-    // TODO: Implement annotated image generation
-    Err(AppError::NotImplemented)
+    State(state): State<Arc<AppState>>,
+    Path(image_id): Path<i32>,
+) -> Result<impl IntoResponse, AppError> {
+    use crate::hocus_focus_star_detection::{detect_stars_hocus_focus, HocusFocusParams};
+    use crate::image_analysis::FitsImage;
+    use crate::mtf_stretch::{stretch_image, StretchParameters};
+    use crate::psf_fitting::PSFType;
+    use crate::server::cache::CacheManager;
+    use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+    use image::{ColorType, ImageBuffer, ImageEncoder, Rgb};
+    use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_circle_mut};
+
+    // Get image metadata from database
+    let (image, file_only, target_name) = {
+        let conn = state.db();
+        let conn = conn.lock().map_err(|_| AppError::DatabaseError)?;
+        let db = Database::new(&conn);
+
+        let images = db
+            .get_images_by_ids(&[image_id])
+            .map_err(|_| AppError::DatabaseError)?;
+
+        let image = images.into_iter().next().ok_or(AppError::NotFound)?;
+
+        // Get target name
+        let targets = db
+            .get_targets_by_ids(&[image.target_id])
+            .map_err(|_| AppError::DatabaseError)?;
+        
+        let target = targets.into_iter().next().ok_or(AppError::NotFound)?;
+        let target_name = target.name.clone();
+
+        let metadata: serde_json::Value = serde_json::from_str(&image.metadata)
+            .map_err(|_| AppError::BadRequest("Invalid metadata".to_string()))?;
+
+        let filename = metadata["FileName"]
+            .as_str()
+            .ok_or_else(|| AppError::BadRequest("No filename in metadata".to_string()))?;
+
+        let file_only = filename
+            .split(&['\\', '/'][..])
+            .next_back()
+            .ok_or_else(|| AppError::BadRequest("Invalid filename format".to_string()))?
+            .to_string();
+
+        (image, file_only, target_name)
+    };
+
+    // Create cache key for annotated image
+    let cache_key = format!("annotated_{}", image_id);
+    let cache_manager = CacheManager::new(state.cache_dir.clone());
+    cache_manager
+        .ensure_category_dir("annotated")
+        .map_err(|e| AppError::InternalError(format!("Failed to create cache directory: {}", e)))?;
+    let cache_path = cache_manager.get_cached_path("annotated", &cache_key, "png");
+
+    // Check if cached version exists
+    if cache_manager.is_cached(&cache_path) {
+        // Serve from cache
+        let mut file = File::open(&cache_path)
+            .await
+            .map_err(|_| AppError::InternalError("Failed to read cache".to_string()))?;
+
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)
+            .await
+            .map_err(|_| AppError::InternalError("Failed to read file".to_string()))?;
+
+        return Ok((
+            StatusCode::OK,
+            [
+                (CONTENT_TYPE, "image/png"),
+                (CACHE_CONTROL, "max-age=86400"), // Cache for 1 day
+            ],
+            buffer,
+        ));
+    }
+
+    // Find and load the FITS file
+    let fits_path = find_fits_file(&state, &image, &target_name, &file_only)?;
+    let fits = FitsImage::from_file(&fits_path)
+        .map_err(|e| AppError::InternalError(format!("Failed to load FITS: {}", e)))?;
+
+    // Calculate image statistics
+    let stats = fits.calculate_basic_statistics();
+
+    // Apply MTF stretch
+    let stretch_params = StretchParameters {
+        factor: 0.2,
+        black_clipping: -2.8,
+    };
+
+    let stretched = stretch_image(
+        &fits.data,
+        &stats,
+        stretch_params.factor,
+        stretch_params.black_clipping,
+    );
+
+    // Detect stars using HocusFocus
+    let params = HocusFocusParams {
+        psf_type: PSFType::None,
+        ..Default::default()
+    };
+
+    let detection_result = detect_stars_hocus_focus(&fits.data, fits.width, fits.height, &params);
+    
+    // Sort stars by HFR (smallest first - best focus) and take top 100
+    let mut stars: Vec<_> = detection_result.stars.iter()
+        .map(|s| (s.position.0, s.position.1, s.hfr))
+        .collect();
+    stars.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+    let stars_to_annotate: Vec<_> = stars.into_iter().take(100).collect();
+
+    // Convert stretched 16-bit data to 8-bit RGB
+    let mut rgb_image = ImageBuffer::<Rgb<u8>, Vec<u8>>::new(fits.width as u32, fits.height as u32);
+
+    for (x, y, pixel) in rgb_image.enumerate_pixels_mut() {
+        let idx = y as usize * fits.width + x as usize;
+        let value = (stretched[idx] >> 8) as u8; // Convert 16-bit to 8-bit
+        *pixel = Rgb([value, value, value]); // Grayscale to RGB
+    }
+
+    // Draw circles around detected stars (yellow color)
+    let color = Rgb([255, 255, 0]);
+
+    for (x, y, hfr) in &stars_to_annotate {
+        // Calculate circle radius based on HFR
+        let radius = (hfr * 2.5).max(5.0) as i32;
+
+        // Draw hollow circle
+        draw_hollow_circle_mut(&mut rgb_image, (*x as i32, *y as i32), radius, color);
+
+        // For very small stars, also draw a filled center point
+        if radius < 8 {
+            draw_filled_circle_mut(&mut rgb_image, (*x as i32, *y as i32), 1, color);
+        }
+    }
+
+    // Save to cache
+    let cache_file = std::fs::File::create(&cache_path)
+        .map_err(|_| AppError::InternalError("Failed to create cache file".to_string()))?;
+    let writer = std::io::BufWriter::new(cache_file);
+
+    // Create PNG encoder with best compression
+    let encoder = PngEncoder::new_with_quality(writer, CompressionType::Best, FilterType::Adaptive);
+
+    // Write the image data
+    encoder
+        .write_image(
+            &rgb_image,
+            fits.width as u32,
+            fits.height as u32,
+            ColorType::Rgb8.into(),
+        )
+        .map_err(|_| AppError::InternalError("Failed to write PNG".to_string()))?;
+
+    // Read the file back into memory
+    let png_buffer = tokio::fs::read(&cache_path)
+        .await
+        .map_err(|_| AppError::InternalError("Failed to read generated PNG".to_string()))?;
+
+    Ok((
+        StatusCode::OK,
+        [
+            (CONTENT_TYPE, "image/png"),
+            (CACHE_CONTROL, "max-age=86400"), // Cache for 1 day
+        ],
+        png_buffer,
+    ))
 }
 
 pub async fn get_psf_visualization(

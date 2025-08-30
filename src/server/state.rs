@@ -14,17 +14,17 @@ pub struct AppState {
 impl AppState {
     pub fn new(db_path: String, image_dir: String, cache_dir: String) -> Result<Self> {
         use std::path::Path;
-        
+
         // Check if database exists
         if !Path::new(&db_path).exists() {
             return Err(anyhow::anyhow!("Database file not found: {}", db_path));
         }
-        
+
         // Check if image directory exists
         if !Path::new(&image_dir).exists() {
             return Err(anyhow::anyhow!("Image directory not found: {}", image_dir));
         }
-        
+
         // Open database connection
         let conn = Connection::open_with_flags(
             &db_path,

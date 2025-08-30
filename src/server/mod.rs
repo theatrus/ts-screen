@@ -44,7 +44,10 @@ pub async fn run_server(
     // Create API routes
     let api_routes = Router::new()
         .route("/projects", get(handlers::list_projects))
-        .route("/projects/{project_id}/targets", get(handlers::list_targets))
+        .route(
+            "/projects/{project_id}/targets",
+            get(handlers::list_targets),
+        )
         .route("/images", get(handlers::get_images))
         .route("/images/{image_id}", get(handlers::get_image))
         .route(
@@ -60,7 +63,10 @@ pub async fn run_server(
             "/images/{image_id}/psf",
             get(handlers::get_psf_visualization),
         )
-        .route("/images/{image_id}/grade", put(handlers::update_image_grade))
+        .route(
+            "/images/{image_id}/grade",
+            put(handlers::update_image_grade),
+        )
         .with_state(state);
 
     // Serve static files with SPA fallback

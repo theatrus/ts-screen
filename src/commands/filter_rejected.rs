@@ -294,6 +294,17 @@ pub fn get_possible_paths(
             .join("LIGHT")
             .join("rejected")
             .join(filename),
+        // date/target/date/LIGHT_REJECT/file.fits
+        base.join(date_str)
+            .join(clean_target)
+            .join(date_str)
+            .join("LIGHT_REJECT")
+            .join(filename),
+        // target/date/LIGHT_REJECT/file.fits
+        base.join(clean_target)
+            .join(date_str)
+            .join("LIGHT_REJECT")
+            .join(filename),
         // Direct under base_dir: LIGHT/file.fits
         base.join("LIGHT").join(filename),
         // Direct under base_dir: target/LIGHT/file.fits
@@ -308,7 +319,7 @@ pub fn find_file_recursive(base_dir: &str, filename: &str) -> Result<Option<Path
         // Skip certain directories to avoid infinite loops or unwanted areas
         if let Some(dir_name) = dir.file_name() {
             let name = dir_name.to_string_lossy();
-            if name == "LIGHT_REJECT" || name == "DARK" || name == "FLAT" || name == "BIAS" {
+            if name == "DARK" || name == "FLAT" || name == "BIAS" {
                 return Ok(None);
             }
         }
