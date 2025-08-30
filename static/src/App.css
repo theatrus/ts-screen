@@ -380,20 +380,110 @@
 .image-container {
   width: 100%;
   height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: relative;
   min-height: 0; /* Important for flexbox children */
 }
 
+.image-container img {
+  /* Position image absolutely so transforms work correctly */
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* Zoom container */
+.zoom-container {
+  position: relative;
+  overflow: hidden;
+  cursor: grab;
+  outline: none;
+  border: 2px solid transparent;
+  transition: border-color 0.3s ease;
+}
+
+.zoom-container:active {
+  cursor: grabbing;
+}
+
+/* Show border when image is larger than container (indicating scrollable content) */
+.zoom-container.has-overflow {
+  border-color: rgba(97, 218, 251, 0.3);
+  box-shadow: inset 0 0 20px rgba(97, 218, 251, 0.1);
+}
+
+.zoom-container img {
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* Compact Bottom Zoom Controls */
+.zoom-section-bottom {
+  border-top: 1px solid #333;
+  padding-top: 0.75rem;
+  margin-top: 1rem;
+}
+
+.zoom-info-compact {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.5rem;
+}
+
+.zoom-percentage-compact {
+  background: #2a2a2a;
+  color: #61dafb;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  min-width: 40px;
+  text-align: center;
+}
+
+.zoom-buttons-compact {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 0.25rem;
+}
+
+.zoom-btn-compact {
+  background: #333;
+  border: 1px solid #444;
+  color: #e0e0e0;
+  padding: 0.25rem;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 500;
+  transition: all 0.2s;
+  text-align: center;
+  min-height: 24px;
+}
+
+.zoom-btn-compact:hover {
+  background: #444;
+  border-color: #555;
+  color: #61dafb;
+}
+
+.zoom-btn-compact:active {
+  background: #555;
+}
+
 .detail-image img {
-  max-width: calc(100% - 2rem);
-  max-height: calc(100% - 2rem);
   width: auto;
   height: auto;
-  object-fit: contain;
-  transition: opacity 0.2s ease-in-out;
   display: block;
+  transition: opacity 0.2s ease-in-out;
+}
+
+/* For zoom functionality, remove max constraints to allow full zoom */
+.zoom-container img {
+  max-width: none !important;
+  max-height: none !important;
+  object-fit: none !important;
+  /* Use top-left transform origin since we're calculating centering manually */
+  transform-origin: 0 0 !important;
 }
 
 .detail-image img.loading {

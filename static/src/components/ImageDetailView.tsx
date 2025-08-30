@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { apiClient } from '../api/client';
 import { GradingStatus } from '../api/types';
 import { useImagePreloader } from '../hooks/useImagePreloader';
+import { useImageZoom } from '../hooks/useImageZoom';
 
 interface ImageDetailViewProps {
   imageId: number;
@@ -25,6 +26,19 @@ export default function ImageDetailView({
   const [showStars, setShowStars] = useState(false);
   const [showPsf, setShowPsf] = useState(false);
   const [imageSize, setImageSize] = useState<'screen' | 'large'>('large');
+
+  // Initialize zoom functionality
+  const zoom = useImageZoom({
+    minScale: 0.1,
+    maxScale: 10.0,
+  });
+
+  // Check if image has overflow (is larger than container)
+  const hasOverflow = zoom.zoomState.scale > 1 || 
+    (zoom.containerRef.current && zoom.imageRef.current && 
+     zoom.imageRef.current.naturalWidth && zoom.imageRef.current.naturalHeight &&
+     (zoom.imageRef.current.naturalWidth * zoom.zoomState.scale > zoom.containerRef.current.clientWidth ||
+      zoom.imageRef.current.naturalHeight * zoom.zoomState.scale > zoom.containerRef.current.clientHeight));
 
   // Preload adjacent images for smooth navigation
   const nextImageIds = adjacentImageIds ? 
@@ -68,6 +82,21 @@ export default function ImageDetailView({
     setShowStars(false); // Turn off stars when showing PSF
   }, [showPsf]);
   useHotkeys('z', () => setImageSize(s => s === 'screen' ? 'large' : 'screen'), []);
+  useHotkeys('plus,equal', () => zoom.zoomIn(), [zoom.zoomIn]);
+  useHotkeys('minus', () => zoom.zoomOut(), [zoom.zoomOut]);
+  useHotkeys('0', () => zoom.resetZoom(), [zoom.resetZoom]);
+  useHotkeys('1', () => zoom.zoomTo100(), [zoom.zoomTo100]);
+  useHotkeys('f', () => zoom.zoomToFit(), [zoom.zoomToFit]);
+
+  // Reset zoom when image changes
+  useEffect(() => {
+    // Longer delay to ensure the image is fully loaded and rendered
+    const timer = setTimeout(() => {
+      zoom.zoomToFit();
+    }, 300);
+    
+    return () => clearTimeout(timer);
+  }, [imageId, showStars, showPsf, imageSize, zoom.zoomToFit]);
 
   // Show loading state only on initial load
   if (!image && isLoading) {
@@ -119,8 +148,19 @@ export default function ImageDetailView({
 
         <div className="detail-content">
           <div className="detail-image">
-            <div className="image-container">
+            <div 
+              className={`image-container zoom-container ${hasOverflow ? 'has-overflow' : ''}`}
+              ref={zoom.containerRef}
+              onWheel={zoom.handleWheel}
+              onMouseDown={zoom.handleMouseDown}
+              onMouseMove={zoom.handleMouseMove}
+              onMouseUp={zoom.handleMouseUp}
+              onMouseLeave={zoom.handleMouseUp}
+              tabIndex={0}
+              onKeyDown={zoom.handleKeyDown}
+            >
               <img
+                ref={zoom.imageRef}
                 key={`${imageId}-${showStars ? 'stars' : showPsf ? 'psf' : 'normal'}-${imageSize}`}
                 className={isFetching ? 'loading' : ''}
                 src={
@@ -136,10 +176,20 @@ export default function ImageDetailView({
                       : apiClient.getPreviewUrl(imageId, { size: imageSize })
                 }
                 alt={`${image.target_name} - ${image.filter_name || 'No filter'}`}
+                style={{
+                  transform: `translate(${zoom.zoomState.offsetX}px, ${zoom.zoomState.offsetY}px) scale(${zoom.zoomState.scale})`,
+                  cursor: zoom.zoomState.scale > 1 ? 'grab' : 'default',
+                  transformOrigin: '0 0',
+                }}
                 onLoad={(e) => {
                   // Remove loading class when image loads
                   e.currentTarget.classList.remove('loading');
+                  // Trigger zoom to fit when image actually loads
+                  setTimeout(() => {
+                    zoom.zoomToFit();
+                  }, 50);
                 }}
+                draggable={false}
               />
             </div>
           </div>
@@ -271,6 +321,43 @@ export default function ImageDetailView({
                 <span>S Stars {showStars ? '✓' : ''}</span>
                 <span>P PSF {showPsf ? '✓' : ''}</span>
                 <span>Z Size</span>
+              </div>
+            </div>
+
+            {/* Compact Zoom Controls at Bottom */}
+            <div className="zoom-section-bottom">
+              <div className="zoom-info-compact">
+                <span className="zoom-percentage-compact">{zoom.getZoomPercentage()}%</span>
+              </div>
+              <div className="zoom-buttons-compact">
+                <button 
+                  className="zoom-btn-compact" 
+                  onClick={zoom.zoomOut}
+                  title="Zoom Out (-)"
+                >
+                  -
+                </button>
+                <button 
+                  className="zoom-btn-compact" 
+                  onClick={zoom.zoomToFit}
+                  title="Fit to Screen (F)"
+                >
+                  Fit
+                </button>
+                <button 
+                  className="zoom-btn-compact" 
+                  onClick={zoom.zoomTo100}
+                  title="100% (1)"
+                >
+                  100%
+                </button>
+                <button 
+                  className="zoom-btn-compact" 
+                  onClick={zoom.zoomIn}
+                  title="Zoom In (+)"
+                >
+                  +
+                </button>
               </div>
             </div>
           </div>

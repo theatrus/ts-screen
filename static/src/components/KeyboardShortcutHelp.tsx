@@ -28,6 +28,15 @@ export default function KeyboardShortcutHelp({ onClose }: KeyboardShortcutHelpPr
       { key: 'G', description: 'Cycle grouping mode (Filter → Date → Both)' },
       { key: '?', description: 'Show this help' },
     ]},
+    { category: 'Zoom & Pan', items: [
+      { key: '+ / =', description: 'Zoom in' },
+      { key: '-', description: 'Zoom out' },
+      { key: 'F', description: 'Fit to screen' },
+      { key: '1', description: '100% zoom' },
+      { key: '0', description: 'Reset zoom' },
+      { key: 'Mouse Wheel', description: 'Zoom in/out toward cursor' },
+      { key: 'Click & Drag', description: 'Pan image when zoomed' },
+    ]},
     { category: 'Batch Selection', items: [
       { key: 'Shift+Click', description: 'Select range of images' },
       { key: 'Ctrl+Click', description: 'Toggle individual image selection' },
