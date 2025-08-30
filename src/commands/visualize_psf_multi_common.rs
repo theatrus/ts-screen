@@ -123,7 +123,7 @@ pub fn create_psf_multi_image(
 
     // Each star gets 3 panels (observed, fitted, residual)
     let star_panel_width = panel_size * 3 + panel_spacing * 2;
-    let star_panel_height = panel_size + 80; // Extra space for text
+    let star_panel_height = panel_size + 120; // Extra space for two lines of larger text
 
     // Total image size
     let total_width = grid_cols * star_panel_width + (grid_cols - 1) * panel_spacing + 40;
@@ -221,7 +221,7 @@ pub fn create_psf_multi_image(
                 ),
             ];
 
-            for (panel_idx, (data, title, min_val, range, color_mode)) in panels.iter().enumerate()
+            for (panel_idx, (data, _title, min_val, range, color_mode)) in panels.iter().enumerate()
             {
                 let panel_x = x_offset + panel_idx * (panel_size + panel_spacing);
                 let panel_y = y_offset + 40;
@@ -254,82 +254,111 @@ pub fn create_psf_multi_image(
                     }
                 }
 
-                // Draw panel border
+                // Draw panel border with better color
                 draw_hollow_rect_mut(
                     &mut img,
                     Rect::at(panel_x as i32 - 1, panel_y as i32 - 1)
                         .of_size((panel_size + 2) as u32, (panel_size + 2) as u32),
-                    Rgba([100, 100, 100, 255]),
+                    Rgba([200, 200, 200, 255]),  // Lighter gray for better visibility
                 );
 
-                // Draw title
-                draw_text(
+                // Draw title with larger text
+                let title_text = match panel_idx {
+                    0 => "OBSERVED",
+                    1 => "FITTED",
+                    2 => "RESIDUAL",
+                    _ => "",
+                };
+                draw_text_with_bg(
                     &mut img,
-                    (panel_x + panel_size / 2 - 30) as u32,
+                    (panel_x + 5) as u32,
                     (panel_y - 20) as u32,
-                    title,
+                    title_text,
                     Rgba([255, 255, 255, 255]),
-                    1,  // scale
+                    Rgba([50, 50, 50, 255]),
+                    2,  // larger scale
                 );
             }
 
-            // Star information
+            // Star information with better formatting
             let info_y = y_offset + panel_size + 50;
-            let info_text = format!(
-                "Star #{} - HFR: {:.2}, FWHM: {:.2}, R²: {:.3}",
-                star_idx + 1,
-                star.hfr,
-                psf_model.fwhm,
-                psf_model.r_squared
-            );
+            
+            // Draw star number with color
+            let star_label = format!("Star #{}", star_idx + 1);
             draw_text_with_bg(
                 &mut img,
                 x_offset as u32,
                 info_y as u32,
-                &info_text,
-                Rgba([255, 255, 255, 255]),
-                Rgba([30, 30, 30, 200]),
-                1,  // scale
+                &star_label,
+                Rgba([255, 220, 0, 255]), // Golden yellow for star number
+                Rgba([40, 40, 40, 255]),
+                2,  // larger scale
+            );
+            
+            // Draw metrics on the next line with more spacing for larger text
+            let metrics_y = info_y + 35;
+            let metrics_text = format!(
+                "HFR: {:.2}  FWHM: {:.2}  R²: {:.3}",
+                star.hfr,
+                psf_model.fwhm,
+                psf_model.r_squared
+            );
+            
+            // Color code based on R² value
+            let text_color = if psf_model.r_squared > 0.95 {
+                Rgba([0, 255, 0, 255])    // Green for excellent fit
+            } else if psf_model.r_squared > 0.90 {
+                Rgba([255, 255, 0, 255])  // Yellow for good fit
+            } else if psf_model.r_squared > 0.85 {
+                Rgba([255, 165, 0, 255])  // Orange for acceptable fit
+            } else {
+                Rgba([255, 100, 100, 255]) // Light red for poor fit
+            };
+            
+            draw_text_with_bg(
+                &mut img,
+                x_offset as u32,
+                metrics_y as u32,
+                &metrics_text,
+                text_color,
+                Rgba([30, 30, 30, 240]),  // Dark semi-transparent background
+                2,  // larger scale for better readability
             );
         }
     }
 
     // Draw location map at bottom
     let map_y_offset = 20 + num_rows * (star_panel_height + panel_spacing);
-    let map_x_offset = (final_width - map_size) / 2;
+    let map_x_offset = (final_width - map_width) / 2;
 
     // Create minimap with a simplified view of the image
-    // First, calculate image statistics for visualization
-    let img_min = fits.data.iter().fold(f64::INFINITY, |a, &b| a.min(b as f64));
-    let img_max = fits.data.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b as f64));
-    let img_range = img_max - img_min;
+    // Calculate proper statistics for visualization
+    let stats = fits.calculate_basic_statistics();
+    
+    // Apply MTF stretch for better visibility
+    use crate::mtf_stretch::{stretch_image, StretchParameters};
+    let stretch_params = StretchParameters {
+        factor: 0.25,  // Stronger stretch for better minimap visibility
+        black_clipping: -2.0,  // Less aggressive black clipping
+    };
+    let stretched = stretch_image(&fits.data, &stats, stretch_params.factor, stretch_params.black_clipping);
     
     // Draw downsampled image as minimap background
-    for y in 0..map_size {
-        for x in 0..map_size {
+    for y in 0..map_height {
+        for x in 0..map_width {
             // Map minimap coordinates to image coordinates
-            let img_x = (x as f64 * width as f64 / map_size as f64) as usize;
-            let img_y = (y as f64 * height as f64 / map_size as f64) as usize;
+            let img_x = (x as f64 * width as f64 / map_width as f64) as usize;
+            let img_y = (y as f64 * height as f64 / map_height as f64) as usize;
             
             if img_x < width && img_y < height {
                 let idx = img_y * width + img_x;
-                let value = fits.data[idx] as f64;
-                let normalized = if img_range > 0.0 {
-                    ((value - img_min) / img_range).powf(0.5) // Sqrt stretch for visibility
-                } else {
-                    0.0
-                };
-                let gray = (normalized * 80.0) as u8; // Keep it dark (max 80/255)
+                let value = stretched[idx];
+                // Convert 16-bit stretched value to 8-bit with better visibility
+                let gray = ((value >> 8) as f64 * 0.8).min(200.0) as u8; // Scale to 80% brightness, cap at 200
                 img.put_pixel(
                     (map_x_offset + x) as u32,
                     (map_y_offset + y) as u32,
                     Rgba([gray, gray, gray, 255]),
-                );
-            } else {
-                img.put_pixel(
-                    (map_x_offset + x) as u32,
-                    (map_y_offset + y) as u32,
-                    Rgba([20, 20, 20, 255]), // Dark gray for out of bounds
                 );
             }
         }
@@ -339,14 +368,14 @@ pub fn create_psf_multi_image(
     draw_hollow_rect_mut(
         &mut img,
         Rect::at(map_x_offset as i32 - 1, map_y_offset as i32 - 1)
-            .of_size((map_size + 2) as u32, (map_size + 2) as u32),
+            .of_size((map_width + 2) as u32, (map_height + 2) as u32),
         Rgba([100, 100, 100, 255]),
     );
 
     // Draw title for map
     draw_text(
         &mut img,
-        (map_x_offset + map_size / 2 - 50) as u32,
+        (map_x_offset + map_width / 2 - 50) as u32,
         (map_y_offset - 20) as u32,
         "Star Locations",
         Rgba([255, 255, 255, 255]),
@@ -354,8 +383,8 @@ pub fn create_psf_multi_image(
     );
 
     // Draw all detected stars as small dots
-    let x_scale = map_size as f64 / width as f64;
-    let y_scale = map_size as f64 / height as f64;
+    let x_scale = map_width as f64 / width as f64;
+    let y_scale = map_height as f64 / height as f64;
 
     // Draw selected stars with numbers
     for (idx, star) in stars_to_show.iter().enumerate() {

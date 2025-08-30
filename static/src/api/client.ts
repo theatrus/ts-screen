@@ -81,7 +81,21 @@ export const apiClient = {
   },
 
   // PSF visualization URL
-  getPsfUrl: (imageId: number): string => {
-    return `/api/images/${imageId}/psf`;
+  getPsfUrl: (imageId: number, options?: {
+    num_stars?: number;
+    psf_type?: string;
+    sort_by?: string;
+    grid_cols?: number;
+    selection?: string;
+  }): string => {
+    const params = new URLSearchParams();
+    if (options?.num_stars) params.append('num_stars', String(options.num_stars));
+    if (options?.psf_type) params.append('psf_type', options.psf_type);
+    if (options?.sort_by) params.append('sort_by', options.sort_by);
+    if (options?.grid_cols) params.append('grid_cols', String(options.grid_cols));
+    if (options?.selection) params.append('selection', options.selection);
+    
+    const queryString = params.toString();
+    return `/api/images/${imageId}/psf${queryString ? `?${queryString}` : ''}`;
   },
 };

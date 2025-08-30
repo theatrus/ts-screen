@@ -24,6 +24,7 @@ export default function ImageDetailView({
   adjacentImageIds,
 }: ImageDetailViewProps) {
   const [showStars, setShowStars] = useState(false);
+  const [showPsf, setShowPsf] = useState(false);
   const [imageSize, setImageSize] = useState<'screen' | 'large'>('large');
 
   // Preload adjacent images for smooth navigation
@@ -60,7 +61,13 @@ export default function ImageDetailView({
   useHotkeys('s', () => {
     console.log('Toggling star overlay:', !showStars);
     setShowStars(s => !s);
+    setShowPsf(false); // Turn off PSF when showing stars
   }, [showStars]);
+  useHotkeys('p', () => {
+    console.log('Toggling PSF visualization:', !showPsf);
+    setShowPsf(s => !s);
+    setShowStars(false); // Turn off stars when showing PSF
+  }, [showPsf]);
   useHotkeys('z', () => setImageSize(s => s === 'screen' ? 'large' : 'screen'), []);
 
   // Show loading state only on initial load
@@ -110,11 +117,19 @@ export default function ImageDetailView({
           <div className="detail-image">
             <div className="image-container">
               <img
-                key={`${imageId}-${showStars ? 'stars' : 'normal'}-${imageSize}`}
+                key={`${imageId}-${showStars ? 'stars' : showPsf ? 'psf' : 'normal'}-${imageSize}`}
                 className={isFetching ? 'loading' : ''}
-                src={showStars 
-                  ? apiClient.getAnnotatedUrl(imageId, imageSize)
-                  : apiClient.getPreviewUrl(imageId, { size: imageSize })
+                src={
+                  showPsf
+                    ? apiClient.getPsfUrl(imageId, { 
+                        num_stars: 9,
+                        psf_type: 'moffat',
+                        sort_by: 'r2',
+                        selection: 'top-n'
+                      })
+                    : showStars 
+                      ? apiClient.getAnnotatedUrl(imageId, imageSize)
+                      : apiClient.getPreviewUrl(imageId, { size: imageSize })
                 }
                 alt={`${image.target_name} - ${image.filter_name || 'No filter'}`}
                 onLoad={(e) => {
@@ -204,7 +219,7 @@ export default function ImageDetailView({
             <div className="detail-shortcuts">
               <p><strong>Shortcuts:</strong></p>
               <p>J/→: Next | K/←: Previous</p>
-              <p>S: Toggle stars {showStars ? '(ON)' : '(OFF)'} | Z: Toggle size</p>
+              <p>S: Stars {showStars ? '(ON)' : '(OFF)'} | P: PSF {showPsf ? '(ON)' : '(OFF)'} | Z: Size</p>
               <p>ESC: Close</p>
             </div>
           </div>
