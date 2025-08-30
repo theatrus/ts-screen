@@ -1,5 +1,6 @@
 pub mod api;
 pub mod cache;
+pub mod embedded_static;
 pub mod handlers;
 pub mod state;
 
@@ -16,12 +17,14 @@ use tower_http::{
     trace::TraceLayer,
 };
 
+use crate::server::embedded_static::serve_embedded_file;
+
 use crate::server::state::AppState;
 
 pub async fn run_server(
     database_path: String,
     image_dir: String,
-    static_dir: String,
+    static_dir: Option<String>,
     cache_dir: String,
     host: String,
     port: u16,
@@ -69,27 +72,41 @@ pub async fn run_server(
         )
         .with_state(state);
 
-    // Serve static files with SPA fallback
-    let static_path = PathBuf::from(&static_dir);
-    let index_path = static_path.join("index.html");
+    // Create main app with either embedded or filesystem static serving
+    let app = if let Some(static_dir_path) = &static_dir {
+        // Use filesystem static serving (for development)
+        let static_path = PathBuf::from(static_dir_path);
+        let index_path = static_path.join("index.html");
+        let serve_dir = ServeDir::new(&static_path).not_found_service(ServeFile::new(&index_path));
 
-    let serve_dir = ServeDir::new(&static_path).not_found_service(ServeFile::new(&index_path));
+        tracing::info!("Serving static files from filesystem: {}", static_dir_path);
 
-    // Create main app
-    let app = Router::new()
-        .nest("/api", api_routes)
-        .fallback_service(serve_dir)
-        .layer(
-            ServiceBuilder::new()
-                .layer(TraceLayer::new_for_http())
-                .layer(CorsLayer::permissive()),
-        );
+        Router::new()
+            .nest("/api", api_routes)
+            .fallback_service(serve_dir)
+            .layer(
+                ServiceBuilder::new()
+                    .layer(TraceLayer::new_for_http())
+                    .layer(CorsLayer::permissive()),
+            )
+    } else {
+        // Use embedded static serving (for production)
+        tracing::info!("Serving static files from embedded assets");
+
+        Router::new()
+            .nest("/api", api_routes)
+            .fallback(serve_embedded_file)
+            .layer(
+                ServiceBuilder::new()
+                    .layer(TraceLayer::new_for_http())
+                    .layer(CorsLayer::permissive()),
+            )
+    };
 
     // Create listener
     let listener = tokio::net::TcpListener::bind(format!("{}:{}", host, port)).await?;
 
     tracing::info!("Server listening on http://{}:{}", host, port);
-    tracing::info!("Serving static files from: {}", static_dir);
     tracing::info!("Using cache directory: {}", cache_dir);
 
     // Run server

@@ -133,7 +133,7 @@ pub fn create_psf_multi_image(
     let max_map_width = 800;
     let max_map_height = 600;
     let aspect_ratio = width as f64 / height as f64;
-    
+
     let (map_width, map_height) = if aspect_ratio > (max_map_width as f64 / max_map_height as f64) {
         // Image is wider - constrain by width
         let map_w = max_map_width.min(width);
@@ -145,7 +145,7 @@ pub fn create_psf_multi_image(
         let map_w = (map_h as f64 * aspect_ratio) as usize;
         (map_w, map_h)
     };
-    
+
     let final_width = total_width.max(map_width + 80);
     let final_height = total_height + map_height + 80;
 
@@ -229,13 +229,13 @@ pub fn create_psf_multi_image(
                 // Draw panel data with scaling
                 let data_size = data.len();
                 let scale_factor = panel_size as f64 / data_size as f64;
-                
+
                 for py in 0..panel_size {
                     for px in 0..panel_size {
                         // Map panel coordinates back to data coordinates
                         let data_y = (py as f64 / scale_factor) as usize;
                         let data_x = (px as f64 / scale_factor) as usize;
-                        
+
                         if data_y < data_size && data_x < data[data_y].len() {
                             let value = data[data_y][data_x];
                             let normalized = if *range > 0.0 {
@@ -243,7 +243,7 @@ pub fn create_psf_multi_image(
                             } else {
                                 0.5
                             };
-                            
+
                             let (r, g, b) = heatmap_color(normalized, color_mode);
                             img.put_pixel(
                                 (panel_x + px) as u32,
@@ -259,7 +259,7 @@ pub fn create_psf_multi_image(
                     &mut img,
                     Rect::at(panel_x as i32 - 1, panel_y as i32 - 1)
                         .of_size((panel_size + 2) as u32, (panel_size + 2) as u32),
-                    Rgba([200, 200, 200, 255]),  // Lighter gray for better visibility
+                    Rgba([200, 200, 200, 255]), // Lighter gray for better visibility
                 );
 
                 // Draw title with larger text
@@ -276,13 +276,13 @@ pub fn create_psf_multi_image(
                     title_text,
                     Rgba([255, 255, 255, 255]),
                     Rgba([50, 50, 50, 255]),
-                    2,  // larger scale
+                    2, // larger scale
                 );
             }
 
             // Star information with better formatting
             let info_y = y_offset + panel_size + 50;
-            
+
             // Draw star number with color
             let star_label = format!("Star #{}", star_idx + 1);
             draw_text_with_bg(
@@ -292,37 +292,35 @@ pub fn create_psf_multi_image(
                 &star_label,
                 Rgba([255, 220, 0, 255]), // Golden yellow for star number
                 Rgba([40, 40, 40, 255]),
-                2,  // larger scale
+                2, // larger scale
             );
-            
+
             // Draw metrics on the next line with more spacing for larger text
             let metrics_y = info_y + 35;
             let metrics_text = format!(
                 "HFR: {:.2}  FWHM: {:.2}  R²: {:.3}",
-                star.hfr,
-                psf_model.fwhm,
-                psf_model.r_squared
+                star.hfr, psf_model.fwhm, psf_model.r_squared
             );
-            
+
             // Color code based on R² value
             let text_color = if psf_model.r_squared > 0.95 {
-                Rgba([0, 255, 0, 255])    // Green for excellent fit
+                Rgba([0, 255, 0, 255]) // Green for excellent fit
             } else if psf_model.r_squared > 0.90 {
-                Rgba([255, 255, 0, 255])  // Yellow for good fit
+                Rgba([255, 255, 0, 255]) // Yellow for good fit
             } else if psf_model.r_squared > 0.85 {
-                Rgba([255, 165, 0, 255])  // Orange for acceptable fit
+                Rgba([255, 165, 0, 255]) // Orange for acceptable fit
             } else {
                 Rgba([255, 100, 100, 255]) // Light red for poor fit
             };
-            
+
             draw_text_with_bg(
                 &mut img,
                 x_offset as u32,
                 metrics_y as u32,
                 &metrics_text,
                 text_color,
-                Rgba([30, 30, 30, 240]),  // Dark semi-transparent background
-                2,  // larger scale for better readability
+                Rgba([30, 30, 30, 240]), // Dark semi-transparent background
+                2,                       // larger scale for better readability
             );
         }
     }
@@ -334,22 +332,27 @@ pub fn create_psf_multi_image(
     // Create minimap with a simplified view of the image
     // Calculate proper statistics for visualization
     let stats = fits.calculate_basic_statistics();
-    
+
     // Apply MTF stretch for better visibility
     use crate::mtf_stretch::{stretch_image, StretchParameters};
     let stretch_params = StretchParameters {
-        factor: 0.25,  // Stronger stretch for better minimap visibility
-        black_clipping: -2.0,  // Less aggressive black clipping
+        factor: 0.25,         // Stronger stretch for better minimap visibility
+        black_clipping: -2.0, // Less aggressive black clipping
     };
-    let stretched = stretch_image(&fits.data, &stats, stretch_params.factor, stretch_params.black_clipping);
-    
+    let stretched = stretch_image(
+        &fits.data,
+        &stats,
+        stretch_params.factor,
+        stretch_params.black_clipping,
+    );
+
     // Draw downsampled image as minimap background
     for y in 0..map_height {
         for x in 0..map_width {
             // Map minimap coordinates to image coordinates
             let img_x = (x as f64 * width as f64 / map_width as f64) as usize;
             let img_y = (y as f64 * height as f64 / map_height as f64) as usize;
-            
+
             if img_x < width && img_y < height {
                 let idx = img_y * width + img_x;
                 let value = stretched[idx];
@@ -363,7 +366,7 @@ pub fn create_psf_multi_image(
             }
         }
     }
-    
+
     // Draw minimap border
     draw_hollow_rect_mut(
         &mut img,
@@ -379,7 +382,7 @@ pub fn create_psf_multi_image(
         (map_y_offset - 20) as u32,
         "Star Locations",
         Rgba([255, 255, 255, 255]),
-        2,  // scale
+        2, // scale
     );
 
     // Draw all detected stars as small dots
@@ -413,7 +416,7 @@ pub fn create_psf_multi_image(
             &label,
             Rgba([255, 255, 255, 255]),
             Rgba([0, 0, 0, 200]),
-            1,  // scale
+            1, // scale
         );
     }
 

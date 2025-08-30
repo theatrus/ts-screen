@@ -1,6 +1,9 @@
 use axum::{
     extract::{Path, Query, State},
-    http::{header::{CACHE_CONTROL, CONTENT_TYPE}, StatusCode},
+    http::{
+        header::{CACHE_CONTROL, CONTENT_TYPE},
+        StatusCode,
+    },
     response::{IntoResponse, Response},
     Json,
 };
@@ -162,40 +165,36 @@ pub async fn get_image(
     // Now we can do async operations
     let stats_cache_filename = format!("stats_{}.json", image_id);
     let stats_cache_path = state.get_cache_path("stats", &stats_cache_filename);
-    
+
     // Ensure cache directory exists
     if let Some(parent) = stats_cache_path.parent() {
         let _ = tokio::fs::create_dir_all(parent).await;
     }
-    
+
     // Check if statistics are already cached
     let fits_stats = if tokio::fs::metadata(&stats_cache_path).await.is_ok() {
         // Load from cache
         match tokio::fs::read_to_string(&stats_cache_path).await {
-            Ok(cached_data) => {
-                serde_json::from_str::<serde_json::Value>(&cached_data).ok()
-            },
+            Ok(cached_data) => serde_json::from_str::<serde_json::Value>(&cached_data).ok(),
             Err(_) => None,
         }
     } else {
         // Calculate statistics from FITS file
-        let filename_result = metadata["FileName"]
-            .as_str()
-            .and_then(|filename| {
-                filename
-                    .split(&['\\', '/'][..])
-                    .next_back()
-                    .map(|file_only| find_fits_file(&state, &image, &target_name, file_only))
-            });
+        let filename_result = metadata["FileName"].as_str().and_then(|filename| {
+            filename
+                .split(&['\\', '/'][..])
+                .next_back()
+                .map(|file_only| find_fits_file(&state, &image, &target_name, file_only))
+        });
 
         if let Some(Ok(fits_path)) = filename_result {
             if let Ok(fits) = FitsImage::from_file(&fits_path) {
                 let stats = fits.calculate_basic_statistics();
-                
+
                 // Extract temperature and camera model from FITS headers
                 let temperature = FitsImage::extract_temperature(&fits_path);
                 let camera_model = FitsImage::extract_camera_model(&fits_path);
-                
+
                 let mut stats_json = serde_json::json!({
                     "Min": stats.min,
                     "Max": stats.max,
@@ -204,12 +203,12 @@ pub async fn get_image(
                     "StdDev": stats.std_dev,
                     "Mad": stats.mad
                 });
-                
+
                 // Add temperature if available
                 if let Some(temp) = temperature {
                     stats_json["Temperature"] = serde_json::json!(temp);
                 }
-                
+
                 // Add camera model if available
                 if let Some(camera) = camera_model {
                     stats_json["Camera"] = serde_json::json!(camera);
@@ -275,7 +274,6 @@ pub async fn update_image_grade(
 
     Ok(Json(ApiResponse::success(())))
 }
-
 
 // Image preview endpoint
 #[axum::debug_handler]
@@ -605,7 +603,7 @@ pub async fn get_annotated_image(
         let targets = db
             .get_targets_by_ids(&[image.target_id])
             .map_err(|_| AppError::DatabaseError)?;
-        
+
         let target = targets.into_iter().next().ok_or(AppError::NotFound)?;
         let target_name = target.name.clone();
 
@@ -627,7 +625,7 @@ pub async fn get_annotated_image(
 
     // Determine size parameter
     let size = options.size.as_deref().unwrap_or("screen");
-    
+
     // Create cache key for annotated image
     let cache_key = format!("annotated_{}_{}", image_id, size);
     let cache_manager = CacheManager::new(state.cache_dir.clone());
@@ -666,9 +664,9 @@ pub async fn get_annotated_image(
     // Create annotated image using the common function
     let rgb_image = create_annotated_image(
         &fits,
-        100,  // max_stars
-        0.2,  // midtone_factor
-        -2.8, // shadow_clipping
+        100,                // max_stars
+        0.2,                // midtone_factor
+        -2.8,               // shadow_clipping
         Rgb([255, 255, 0]), // yellow color
     )
     .map_err(|e| AppError::InternalError(format!("Failed to create annotated image: {}", e)))?;
@@ -684,7 +682,12 @@ pub async fn get_annotated_image(
                 } else {
                     ((2000.0 * aspect_ratio) as u32, 2000)
                 };
-                image::imageops::resize(&rgb_image, new_width, new_height, image::imageops::FilterType::Lanczos3)
+                image::imageops::resize(
+                    &rgb_image,
+                    new_width,
+                    new_height,
+                    image::imageops::FilterType::Lanczos3,
+                )
             } else {
                 rgb_image
             }
@@ -698,7 +701,12 @@ pub async fn get_annotated_image(
                 } else {
                     ((1200.0 * aspect_ratio) as u32, 1200)
                 };
-                image::imageops::resize(&rgb_image, new_width, new_height, image::imageops::FilterType::Lanczos3)
+                image::imageops::resize(
+                    &rgb_image,
+                    new_width,
+                    new_height,
+                    image::imageops::FilterType::Lanczos3,
+                )
             } else {
                 rgb_image
             }
@@ -715,15 +723,10 @@ pub async fn get_annotated_image(
     let encoder = PngEncoder::new_with_quality(writer, CompressionType::Best, FilterType::Adaptive);
 
     let (img_width, img_height) = final_image.dimensions();
-    
+
     // Write the image data
     encoder
-        .write_image(
-            &final_image,
-            img_width,
-            img_height,
-            ColorType::Rgb8.into(),
-        )
+        .write_image(&final_image, img_width, img_height, ColorType::Rgb8.into())
         .map_err(|_| AppError::InternalError("Failed to write PNG".to_string()))?;
 
     // Read the file back into memory
@@ -780,7 +783,7 @@ pub async fn get_psf_visualization(
         let targets = db
             .get_targets_by_ids(&[image.target_id])
             .map_err(|_| AppError::DatabaseError)?;
-        
+
         let target = targets.into_iter().next().ok_or(AppError::NotFound)?;
         let target_name = target.name.clone();
 
@@ -805,13 +808,17 @@ pub async fn get_psf_visualization(
     let psf_type_str = options.psf_type.as_deref().unwrap_or("moffat");
     let sort_by = options.sort_by.as_deref().unwrap_or("r2");
     let selection = options.selection.as_deref().unwrap_or("top-n");
-    
+
     let psf_type: PSFType = psf_type_str.parse().unwrap_or(PSFType::Moffat4);
-    
+
     // Create cache key for PSF multi image
     let cache_key = format!(
         "psf_multi_{}_{}_{}_{}_{}_{}",
-        image_id, num_stars, psf_type_str, sort_by, selection,
+        image_id,
+        num_stars,
+        psf_type_str,
+        sort_by,
+        selection,
         options.grid_cols.unwrap_or(0)
     );
     let cache_manager = CacheManager::new(state.cache_dir.clone());

@@ -1,4 +1,5 @@
 use std::env;
+use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
@@ -11,6 +12,9 @@ fn main() {
         check_macos_libclang();
         detect_opencv_version();
     }
+
+    // Build and embed the React app
+    build_react_app();
 }
 
 #[cfg(target_os = "macos")]
@@ -92,4 +96,120 @@ fn detect_opencv_version() {
             );
         }
     }
+}
+
+fn build_react_app() {
+    let cargo_manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let static_dir = PathBuf::from(&cargo_manifest_dir).join("static");
+    let dist_dir = static_dir.join("dist");
+
+    // Tell cargo to rerun if any file in static/src changes
+    println!("cargo:rerun-if-changed=static/src");
+    println!("cargo:rerun-if-changed=static/package.json");
+    println!("cargo:rerun-if-changed=static/package-lock.json");
+    println!("cargo:rerun-if-changed=static/vite.config.ts");
+    println!("cargo:rerun-if-changed=static/tsconfig.json");
+    println!("cargo:rerun-if-changed=static/index.html");
+
+    // Check if we're in a development environment or CI
+    let is_dev = env::var("PROFILE").unwrap_or_default() == "debug";
+    let skip_build = env::var("PSF_GUARD_SKIP_FRONTEND_BUILD").is_ok();
+
+    if skip_build {
+        eprintln!(
+            "cargo:warning=Skipping frontend build due to PSF_GUARD_SKIP_FRONTEND_BUILD env var"
+        );
+        return;
+    }
+
+    // Check if static directory exists
+    if !static_dir.exists() {
+        eprintln!(
+            "cargo:warning=Static directory not found at {:?}, skipping frontend build",
+            static_dir
+        );
+        return;
+    }
+
+    // Check if dist directory already exists and is newer than source files in development
+    if is_dev && dist_dir.exists() && is_dist_newer_than_sources(&static_dir, &dist_dir) {
+        eprintln!("cargo:warning=Frontend dist is up to date, skipping build");
+        return;
+    }
+
+    eprintln!("cargo:warning=Building React frontend...");
+
+    // Change to static directory
+    let output = Command::new("npm")
+        .args(["run", "build"])
+        .current_dir(&static_dir)
+        .output();
+
+    match output {
+        Ok(output) => {
+            if output.status.success() {
+                eprintln!("cargo:warning=Frontend build completed successfully");
+            } else {
+                eprintln!("cargo:warning=Frontend build failed:");
+                eprintln!(
+                    "cargo:warning=stdout: {}",
+                    String::from_utf8_lossy(&output.stdout)
+                );
+                eprintln!(
+                    "cargo:warning=stderr: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                panic!("Frontend build failed");
+            }
+        }
+        Err(e) => {
+            eprintln!("cargo:warning=Failed to run npm build: {}", e);
+            eprintln!("cargo:warning=Make sure npm is installed and accessible");
+            panic!("Could not execute npm build");
+        }
+    }
+}
+
+fn is_dist_newer_than_sources(static_dir: &PathBuf, dist_dir: &PathBuf) -> bool {
+    use std::fs;
+
+    // Get the modification time of the dist directory
+    let dist_time = match fs::metadata(dist_dir).and_then(|m| m.modified()) {
+        Ok(time) => time,
+        Err(_) => return false, // If we can't get dist time, rebuild
+    };
+
+    // Check if any source file is newer than dist
+    let src_dir = static_dir.join("src");
+    if let Ok(entries) = fs::read_dir(&src_dir) {
+        for entry in entries.flatten() {
+            if let Ok(metadata) = entry.metadata() {
+                if let Ok(modified) = metadata.modified() {
+                    if modified > dist_time {
+                        return false; // Source is newer, need to rebuild
+                    }
+                }
+            }
+        }
+    }
+
+    // Also check package.json and other config files
+    let config_files = [
+        "package.json",
+        "package-lock.json",
+        "vite.config.ts",
+        "tsconfig.json",
+    ];
+    for file in &config_files {
+        let file_path = static_dir.join(file);
+        if let Ok(metadata) = fs::metadata(&file_path) {
+            if let Ok(modified) = metadata.modified() {
+                if modified > dist_time {
+                    return false; // Config file is newer, need to rebuild
+                }
+            }
+        }
+    }
+
+    true // All source files are older than dist
 }

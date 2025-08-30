@@ -28,15 +28,19 @@ impl FitsImage {
     /// Extract temperature from FITS headers
     pub fn extract_temperature(path: &Path) -> Option<f64> {
         use fitrs::Fits;
-        
+
         if let Ok(fits) = Fits::open(path) {
             if let Some(hdu) = fits.get(0) {
                 // Try common temperature header keywords
-                let temp_keywords = ["CCD-TEMP", "TEMP", "SET-TEMP", "CCD_TEMP", "TEMPERAT", "CCDTEMP"];
-                
+                let temp_keywords = [
+                    "CCD-TEMP", "TEMP", "SET-TEMP", "CCD_TEMP", "TEMPERAT", "CCDTEMP",
+                ];
+
                 // Compile regex once outside the loop
-                let number_regex = regex::Regex::new(r"(?:FloatingPoint|Integer|RealFloatingNumber)\(([^)]+)\)").unwrap();
-                
+                let number_regex =
+                    regex::Regex::new(r"(?:FloatingPoint|Integer|RealFloatingNumber)\(([^)]+)\)")
+                        .unwrap();
+
                 for keyword in &temp_keywords {
                     if let Some(value) = hdu.value(keyword) {
                         // Parse the value as a number
@@ -57,15 +61,16 @@ impl FitsImage {
     /// Extract camera model from FITS headers
     pub fn extract_camera_model(path: &Path) -> Option<String> {
         use fitrs::Fits;
-        
+
         if let Ok(fits) = Fits::open(path) {
             if let Some(hdu) = fits.get(0) {
                 // Try common camera/instrument header keywords
                 let camera_keywords = ["INSTRUME", "CAMERA", "DETECTOR", "CCD_NAME", "CCDNAME"];
-                
+
                 // Compile regex once outside the loop - handle both CharacterString and String formats
-                let string_regex = regex::Regex::new(r#"(?:CharacterString|String)\("([^"]+)"\)"#).unwrap();
-                
+                let string_regex =
+                    regex::Regex::new(r#"(?:CharacterString|String)\("([^"]+)"\)"#).unwrap();
+
                 for keyword in &camera_keywords {
                     if let Some(value) = hdu.value(keyword) {
                         // Extract string value from debug format

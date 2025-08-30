@@ -331,9 +331,9 @@ pub enum Commands {
         /// Base directory containing the image files
         image_dir: String,
 
-        /// Directory to serve static files from (for React app)
-        #[arg(long, default_value = "./static")]
-        static_dir: String,
+        /// Directory to serve static files from (for React app, optional - uses embedded files if not provided)
+        #[arg(long)]
+        static_dir: Option<String>,
 
         /// Cache directory for processed images
         #[arg(long, default_value = "./cache")]
