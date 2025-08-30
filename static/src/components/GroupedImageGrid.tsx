@@ -1,11 +1,11 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { useInView } from 'react-intersection-observer';
 import { apiClient } from '../api/client';
 import type { Image, UpdateGradeRequest } from '../api/types';
 import { GradingStatus } from '../api/types';
 import ImageCard from './ImageCard';
+import LazyImageCard from './LazyImageCard';
 import ImageDetailView from './ImageDetailView';
 
 interface ImageGridProps {
@@ -20,7 +20,11 @@ interface ImageGroup {
 
 type GroupingMode = 'filter' | 'date' | 'both';
 
-export default function GroupedImageGrid({ projectId, targetId }: ImageGridProps) {
+interface GroupedImageGridProps extends ImageGridProps {
+  useLazyImages?: boolean;
+}
+
+export default function GroupedImageGrid({ projectId, targetId, useLazyImages = false }: GroupedImageGridProps) {
   const queryClient = useQueryClient();
   const [selectedGroupIndex, setSelectedGroupIndex] = useState(0);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
@@ -277,22 +281,25 @@ export default function GroupedImageGrid({ projectId, targetId }: ImageGridProps
                       gridTemplateColumns: `repeat(auto-fill, minmax(${imageSize}px, 1fr))`,
                     }}
                   >
-                    {group.images.map((image, indexInGroup) => (
-                      <ImageCard
-                        key={image.id}
-                        image={image}
-                        isSelected={
-                          selectedGroupIndex === groupIndex && 
-                          selectedImageIndex === indexInGroup
-                        }
-                        onClick={() => {
-                          setSelectedGroupIndex(groupIndex);
-                          setSelectedImageIndex(indexInGroup);
-                          setSelectedImageId(image.id);
-                        }}
-                        onDoubleClick={() => setShowDetail(true)}
-                      />
-                    ))}
+                    {group.images.map((image, indexInGroup) => {
+                      const CardComponent = useLazyImages ? LazyImageCard : ImageCard;
+                      return (
+                        <CardComponent
+                          key={image.id}
+                          image={image}
+                          isSelected={
+                            selectedGroupIndex === groupIndex && 
+                            selectedImageIndex === indexInGroup
+                          }
+                          onClick={() => {
+                            setSelectedGroupIndex(groupIndex);
+                            setSelectedImageIndex(indexInGroup);
+                            setSelectedImageId(image.id);
+                          }}
+                          onDoubleClick={() => setShowDetail(true)}
+                        />
+                      );
+                    })}
                   </div>
                 )}
               </div>

@@ -38,6 +38,7 @@ function App() {
           <GroupedImageGrid
             projectId={selectedProjectId}
             targetId={selectedTargetId}
+            useLazyImages={true}
           />
         )}
         {!selectedProjectId && (

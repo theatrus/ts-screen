@@ -70,8 +70,10 @@ export interface PreviewOptions {
   shadow?: number;
 }
 
-export enum GradingStatus {
-  Pending = 0,
-  Accepted = 1,
-  Rejected = 2,
-}
+export const GradingStatus = {
+  Pending: 0,
+  Accepted: 1,
+  Rejected: 2,
+} as const;
+
+export type GradingStatus = typeof GradingStatus[keyof typeof GradingStatus];
