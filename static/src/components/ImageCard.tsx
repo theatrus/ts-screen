@@ -12,6 +12,7 @@ interface ImageCardProps {
 
 export default function ImageCard({ image, isSelected, onClick, onDoubleClick }: ImageCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
 
   // Scroll into view when selected
   useEffect(() => {
@@ -19,6 +20,14 @@ export default function ImageCard({ image, isSelected, onClick, onDoubleClick }:
       cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   }, [isSelected]);
+
+  // Preload full size image when selected (for quick detail view opening)
+  useEffect(() => {
+    if (isSelected && image.id) {
+      const preloadImg = new Image();
+      preloadImg.src = apiClient.getPreviewUrl(image.id, { size: 'large' });
+    }
+  }, [isSelected, image.id]);
 
   const getStatusClass = () => {
     switch (image.grading_status) {
@@ -68,6 +77,7 @@ export default function ImageCard({ image, isSelected, onClick, onDoubleClick }:
     >
       <div className="image-preview">
         <img
+          ref={imgRef}
           src={apiClient.getPreviewUrl(image.id, { size: 'screen' })}
           alt={`${image.target_name} - ${image.filter_name || 'No filter'}`}
           loading="lazy"
@@ -85,10 +95,10 @@ export default function ImageCard({ image, isSelected, onClick, onDoubleClick }:
         )}
         <div className={`image-status ${getStatusClass()}`}>
           {getStatusText()}
+          {image.reject_reason && (
+            <span className="reject-reason-inline"> - {image.reject_reason}</span>
+          )}
         </div>
-        {image.reject_reason && (
-          <p className="reject-reason">{image.reject_reason}</p>
-        )}
       </div>
     </div>
   );

@@ -1,69 +1,99 @@
-# React + TypeScript + Vite
+# PSF Guard Web Interface
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This is the React-based web interface for PSF Guard, providing an efficient image grading workflow for astronomical images.
 
-Currently, two official plugins are available:
+## Development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+### Prerequisites
 
-## Expanding the ESLint configuration
+- Node.js 18+ and npm
+- The PSF Guard backend server running
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### Setup
 
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+```bash
+# Install dependencies
+npm install
 
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# Start development server
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The development server runs on http://localhost:5173 and proxies API requests to the backend at http://localhost:3000.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### Running with Backend
 
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+1. Start the backend server:
+   ```bash
+   cargo run -- server schedulerdb.sqlite /path/to/images
+   ```
+
+2. Start the frontend dev server:
+   ```bash
+   cd static
+   npm run dev
+   ```
+
+## Production Build
+
+### Using Make (Recommended)
+
+From the project root:
+
+```bash
+# Build everything (frontend + backend)
+make build
+
+# Build only frontend
+make build-frontend
+
+# Clean and rebuild
+make clean build
 ```
+
+### Manual Build
+
+```bash
+# From the static directory
+npm run build
+
+# Copy to dist
+mkdir -p ../dist/static
+cp -r dist/* ../dist/static/
+```
+
+### Serving Production Build
+
+After building, run the server with the static directory:
+
+```bash
+cargo run --release -- server schedulerdb.sqlite /path/to/images --static-dir dist/static
+```
+
+## Features
+
+- **Keyboard-First Navigation**: Optimized for efficient image grading
+  - `j`/`k` or arrow keys: Navigate images
+  - `a`: Accept image
+  - `r`: Reject image
+  - `u`: Unmark (set to pending)
+  - `s`: Toggle star overlay
+  - `?`: Show help
+
+- **Image Grouping**: Images are automatically grouped by filter type
+- **Adjustable Thumbnails**: Slider to resize images from 150px to 1200px
+- **Image Preloading**: Smooth navigation with automatic preloading
+- **Full Image View**: Double-click or Enter to see full details
+- **Statistics**: HFR and star count displayed for each image
+
+## Architecture
+
+- **React 19** with TypeScript
+- **Vite** for fast development and optimized builds
+- **React Query** for server state management
+- **Axios** for API communication
+- **react-hotkeys-hook** for keyboard shortcuts
+
+## API Integration
+
+The frontend expects the backend API to be available at `/api`. In development, this is proxied to `http://localhost:3000`. In production, the backend serves both the API and static files.

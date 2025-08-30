@@ -12,4 +12,20 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    // Output to dist directory
+    outDir: 'dist',
+    // Generate source maps for debugging
+    sourcemap: true,
+    // Optimize chunk size
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          query: ['@tanstack/react-query', 'axios'],
+        },
+      },
+    },
+  },
+  base: '/',
 })

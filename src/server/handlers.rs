@@ -494,15 +494,13 @@ pub async fn get_image_stars(
 pub async fn get_annotated_image(
     State(state): State<Arc<AppState>>,
     Path(image_id): Path<i32>,
+    Query(options): Query<PreviewOptions>,
 ) -> Result<impl IntoResponse, AppError> {
-    use crate::hocus_focus_star_detection::{detect_stars_hocus_focus, HocusFocusParams};
+    use crate::commands::annotate_stars_common::create_annotated_image;
     use crate::image_analysis::FitsImage;
-    use crate::mtf_stretch::{stretch_image, StretchParameters};
-    use crate::psf_fitting::PSFType;
     use crate::server::cache::CacheManager;
     use image::codecs::png::{CompressionType, FilterType, PngEncoder};
-    use image::{ColorType, ImageBuffer, ImageEncoder, Rgb};
-    use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_circle_mut};
+    use image::{ColorType, ImageEncoder, Rgb};
 
     // Get image metadata from database
     let (image, file_only, target_name) = {
@@ -540,8 +538,11 @@ pub async fn get_annotated_image(
         (image, file_only, target_name)
     };
 
+    // Determine size parameter
+    let size = options.size.as_deref().unwrap_or("screen");
+    
     // Create cache key for annotated image
-    let cache_key = format!("annotated_{}", image_id);
+    let cache_key = format!("annotated_{}_{}", image_id, size);
     let cache_manager = CacheManager::new(state.cache_dir.clone());
     cache_manager
         .ensure_category_dir("annotated")
@@ -575,61 +576,48 @@ pub async fn get_annotated_image(
     let fits = FitsImage::from_file(&fits_path)
         .map_err(|e| AppError::InternalError(format!("Failed to load FITS: {}", e)))?;
 
-    // Calculate image statistics
-    let stats = fits.calculate_basic_statistics();
+    // Create annotated image using the common function
+    let rgb_image = create_annotated_image(
+        &fits,
+        100,  // max_stars
+        0.2,  // midtone_factor
+        -2.8, // shadow_clipping
+        Rgb([255, 255, 0]), // yellow color
+    )
+    .map_err(|e| AppError::InternalError(format!("Failed to create annotated image: {}", e)))?;
 
-    // Apply MTF stretch
-    let stretch_params = StretchParameters {
-        factor: 0.2,
-        black_clipping: -2.8,
-    };
-
-    let stretched = stretch_image(
-        &fits.data,
-        &stats,
-        stretch_params.factor,
-        stretch_params.black_clipping,
-    );
-
-    // Detect stars using HocusFocus
-    let params = HocusFocusParams {
-        psf_type: PSFType::None,
-        ..Default::default()
-    };
-
-    let detection_result = detect_stars_hocus_focus(&fits.data, fits.width, fits.height, &params);
-    
-    // Sort stars by HFR (smallest first - best focus) and take top 100
-    let mut stars: Vec<_> = detection_result.stars.iter()
-        .map(|s| (s.position.0, s.position.1, s.hfr))
-        .collect();
-    stars.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
-    let stars_to_annotate: Vec<_> = stars.into_iter().take(100).collect();
-
-    // Convert stretched 16-bit data to 8-bit RGB
-    let mut rgb_image = ImageBuffer::<Rgb<u8>, Vec<u8>>::new(fits.width as u32, fits.height as u32);
-
-    for (x, y, pixel) in rgb_image.enumerate_pixels_mut() {
-        let idx = y as usize * fits.width + x as usize;
-        let value = (stretched[idx] >> 8) as u8; // Convert 16-bit to 8-bit
-        *pixel = Rgb([value, value, value]); // Grayscale to RGB
-    }
-
-    // Draw circles around detected stars (yellow color)
-    let color = Rgb([255, 255, 0]);
-
-    for (x, y, hfr) in &stars_to_annotate {
-        // Calculate circle radius based on HFR
-        let radius = (hfr * 2.5).max(5.0) as i32;
-
-        // Draw hollow circle
-        draw_hollow_circle_mut(&mut rgb_image, (*x as i32, *y as i32), radius, color);
-
-        // For very small stars, also draw a filled center point
-        if radius < 8 {
-            draw_filled_circle_mut(&mut rgb_image, (*x as i32, *y as i32), 1, color);
+    // Resize if needed based on size parameter
+    let final_image = match size {
+        "large" => {
+            // Check if we need to resize for "large"
+            if fits.width > 2000 || fits.height > 2000 {
+                let aspect_ratio = fits.width as f32 / fits.height as f32;
+                let (new_width, new_height) = if fits.width > fits.height {
+                    (2000, (2000.0 / aspect_ratio) as u32)
+                } else {
+                    ((2000.0 * aspect_ratio) as u32, 2000)
+                };
+                image::imageops::resize(&rgb_image, new_width, new_height, image::imageops::FilterType::Lanczos3)
+            } else {
+                rgb_image
+            }
         }
-    }
+        "screen" => {
+            // Resize for screen viewing
+            if fits.width > 1200 || fits.height > 1200 {
+                let aspect_ratio = fits.width as f32 / fits.height as f32;
+                let (new_width, new_height) = if fits.width > fits.height {
+                    (1200, (1200.0 / aspect_ratio) as u32)
+                } else {
+                    ((1200.0 * aspect_ratio) as u32, 1200)
+                };
+                image::imageops::resize(&rgb_image, new_width, new_height, image::imageops::FilterType::Lanczos3)
+            } else {
+                rgb_image
+            }
+        }
+        _ => rgb_image, // No resize for other sizes
+    };
 
     // Save to cache
     let cache_file = std::fs::File::create(&cache_path)
@@ -639,12 +627,14 @@ pub async fn get_annotated_image(
     // Create PNG encoder with best compression
     let encoder = PngEncoder::new_with_quality(writer, CompressionType::Best, FilterType::Adaptive);
 
+    let (img_width, img_height) = final_image.dimensions();
+    
     // Write the image data
     encoder
         .write_image(
-            &rgb_image,
-            fits.width as u32,
-            fits.height as u32,
+            &final_image,
+            img_width,
+            img_height,
             ColorType::Rgb8.into(),
         )
         .map_err(|_| AppError::InternalError("Failed to write PNG".to_string()))?;

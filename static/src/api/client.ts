@@ -76,8 +76,8 @@ export const apiClient = {
   },
 
   // Annotated image URL
-  getAnnotatedUrl: (imageId: number): string => {
-    return `/api/images/${imageId}/annotated`;
+  getAnnotatedUrl: (imageId: number, size: 'screen' | 'large' = 'large'): string => {
+    return `/api/images/${imageId}/annotated?size=${size}`;
   },
 
   // PSF visualization URL

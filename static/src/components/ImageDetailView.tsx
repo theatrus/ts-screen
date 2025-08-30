@@ -4,6 +4,7 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { apiClient } from '../api/client';
 import type { Image } from '../api/types';
 import { GradingStatus } from '../api/types';
+import { useImagePreloader } from '../hooks/useImagePreloader';
 
 interface ImageDetailViewProps {
   imageId: number;
@@ -11,6 +12,7 @@ interface ImageDetailViewProps {
   onNext: () => void;
   onPrevious: () => void;
   onGrade: (status: 'accepted' | 'rejected' | 'pending') => void;
+  adjacentImageIds?: { next: number[]; previous: number[] };
 }
 
 export default function ImageDetailView({
@@ -19,14 +21,26 @@ export default function ImageDetailView({
   onNext,
   onPrevious,
   onGrade,
+  adjacentImageIds,
 }: ImageDetailViewProps) {
   const [showStars, setShowStars] = useState(false);
   const [imageSize, setImageSize] = useState<'screen' | 'large'>('large');
 
+  // Preload adjacent images for smooth navigation
+  const nextImageIds = adjacentImageIds ? 
+    [...adjacentImageIds.next, ...adjacentImageIds.previous] : [];
+  
+  useImagePreloader(imageId, nextImageIds, {
+    preloadCount: 2,
+    includeAnnotated: showStars,
+    imageSize: imageSize,
+  });
+
   // Fetch image details
-  const { data: image } = useQuery({
+  const { data: image, isLoading, isFetching } = useQuery({
     queryKey: ['image', imageId],
     queryFn: () => apiClient.getImage(imageId),
+    placeholderData: (previousData) => previousData, // Keep showing previous image while loading new one
   });
 
   // Fetch star detection
@@ -43,10 +57,30 @@ export default function ImageDetailView({
   useHotkeys('a', () => onGrade('accepted'), [onGrade]);
   useHotkeys('r', () => onGrade('rejected'), [onGrade]);
   useHotkeys('u', () => onGrade('pending'), [onGrade]);
-  useHotkeys('s', () => setShowStars(s => !s), []);
+  useHotkeys('s', () => {
+    console.log('Toggling star overlay:', !showStars);
+    setShowStars(s => !s);
+  }, [showStars]);
   useHotkeys('z', () => setImageSize(s => s === 'screen' ? 'large' : 'screen'), []);
 
-  if (!image) return null;
+  // Show loading state only on initial load
+  if (!image && isLoading) {
+    return (
+      <div className="image-detail-overlay">
+        <div className="image-detail">
+          <div className="detail-loading">
+            <div className="loading-spinner"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If no image data at all, close the modal
+  if (!image) {
+    onClose();
+    return null;
+  }
 
   const getStatusClass = () => {
     switch (image.grading_status) {
@@ -74,13 +108,21 @@ export default function ImageDetailView({
 
         <div className="detail-content">
           <div className="detail-image">
-            <img
-              src={showStars 
-                ? apiClient.getAnnotatedUrl(imageId)
-                : apiClient.getPreviewUrl(imageId, { size: imageSize })
-              }
-              alt={`${image.target_name} - ${image.filter_name || 'No filter'}`}
-            />
+            <div className="image-container">
+              <img
+                key={`${imageId}-${showStars ? 'stars' : 'normal'}-${imageSize}`}
+                className={isFetching ? 'loading' : ''}
+                src={showStars 
+                  ? apiClient.getAnnotatedUrl(imageId, imageSize)
+                  : apiClient.getPreviewUrl(imageId, { size: imageSize })
+                }
+                alt={`${image.target_name} - ${image.filter_name || 'No filter'}`}
+                onLoad={(e) => {
+                  // Remove loading class when image loads
+                  e.currentTarget.classList.remove('loading');
+                }}
+              />
+            </div>
           </div>
 
           <div className="detail-info">
@@ -162,7 +204,7 @@ export default function ImageDetailView({
             <div className="detail-shortcuts">
               <p><strong>Shortcuts:</strong></p>
               <p>J/→: Next | K/←: Previous</p>
-              <p>S: Toggle stars | Z: Toggle size</p>
+              <p>S: Toggle stars {showStars ? '(ON)' : '(OFF)'} | Z: Toggle size</p>
               <p>ESC: Close</p>
             </div>
           </div>

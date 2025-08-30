@@ -1,7 +1,7 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo, CSSProperties } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { useInView } from 'react-intersection-observer';
+import { VariableSizeList as List } from 'react-window';
 import { apiClient } from '../api/client';
 import type { Image, UpdateGradeRequest } from '../api/types';
 import { GradingStatus } from '../api/types';
@@ -20,16 +20,103 @@ interface ImageGroup {
 
 type GroupingMode = 'filter' | 'date' | 'both';
 
-export default function GroupedImageGrid({ projectId, targetId }: ImageGridProps) {
+interface VirtualRowData {
+  groups: ImageGroup[];
+  expandedGroups: Set<string>;
+  imageSize: number;
+  selectedGroupIndex: number;
+  selectedImageIndex: number;
+  onImageClick: (groupIndex: number, imageIndex: number, imageId: number) => void;
+  onImageDoubleClick: () => void;
+  getImagesPerRow: (width: number) => number;
+}
+
+// Component to render a single group
+const GroupRow = ({ index, style, data }: {
+  index: number;
+  style: CSSProperties;
+  data: VirtualRowData;
+}) => {
+  const group = data.groups[index];
+  const isExpanded = data.expandedGroups.has(group.filterName);
+  const stats = {
+    total: group.images.length,
+    accepted: group.images.filter(img => img.grading_status === GradingStatus.Accepted).length,
+    rejected: group.images.filter(img => img.grading_status === GradingStatus.Rejected).length,
+    pending: group.images.filter(img => img.grading_status === GradingStatus.Pending).length,
+  };
+
+  return (
+    <div style={style}>
+      <div className="filter-group">
+        <div 
+          className="filter-header"
+          onClick={() => {
+            // Toggle group expansion - handled by parent
+          }}
+        >
+          <span className="filter-toggle">{isExpanded ? '▼' : '▶'}</span>
+          <h3>{group.filterName}</h3>
+          <div className="filter-stats">
+            <span className="stat-total">{stats.total} images</span>
+            <span className="stat-accepted">{stats.accepted} accepted</span>
+            <span className="stat-rejected">{stats.rejected} rejected</span>
+            <span className="stat-pending">{stats.pending} pending</span>
+          </div>
+        </div>
+        
+        {isExpanded && (
+          <div 
+            className="filter-images"
+            style={{
+              gridTemplateColumns: `repeat(auto-fill, minmax(${data.imageSize}px, 1fr))`,
+            }}
+          >
+            {group.images.map((image, indexInGroup) => (
+              <ImageCard
+                key={image.id}
+                image={image}
+                isSelected={
+                  data.selectedGroupIndex === index && 
+                  data.selectedImageIndex === indexInGroup
+                }
+                onClick={() => data.onImageClick(index, indexInGroup, image.id)}
+                onDoubleClick={data.onImageDoubleClick}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default function VirtualizedGroupedImageGrid({ projectId, targetId }: ImageGridProps) {
   const queryClient = useQueryClient();
   const [selectedGroupIndex, setSelectedGroupIndex] = useState(0);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [selectedImageId, setSelectedImageId] = useState<number | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const [imageSize, setImageSize] = useState(300); // Default thumbnail size
+  const [imageSize, setImageSize] = useState(300);
   const [groupingMode, setGroupingMode] = useState<GroupingMode>('filter');
-  const gridRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<List>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerHeight, setContainerHeight] = useState(600);
+
+  // Track container height
+  useEffect(() => {
+    const updateHeight = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        setContainerHeight(rect.height);
+      }
+    };
+
+    updateHeight();
+    window.addEventListener('resize', updateHeight);
+    return () => window.removeEventListener('resize', updateHeight);
+  }, []);
 
   // Fetch ALL images (no pagination for grouping)
   const { data: allImages = [], isLoading } = useQuery({
@@ -37,7 +124,7 @@ export default function GroupedImageGrid({ projectId, targetId }: ImageGridProps
     queryFn: () => apiClient.getImages({
       project_id: projectId,
       target_id: targetId || undefined,
-      limit: 10000, // Get all images
+      limit: 10000,
     }),
   });
 
@@ -51,15 +138,13 @@ export default function GroupedImageGrid({ projectId, targetId }: ImageGridProps
       if (groupingMode === 'filter') {
         groupKey = image.filter_name || 'No Filter';
       } else if (groupingMode === 'date') {
-        // Group by date (YYYY-MM-DD)
         if (image.acquired_date) {
           const date = new Date(image.acquired_date * 1000);
           groupKey = date.toISOString().split('T')[0];
         } else {
           groupKey = 'Unknown Date';
         }
-      } else { // 'both'
-        // Group by both filter and date
+      } else {
         const filterName = image.filter_name || 'No Filter';
         let dateStr = 'Unknown Date';
         if (image.acquired_date) {
@@ -75,44 +160,75 @@ export default function GroupedImageGrid({ projectId, targetId }: ImageGridProps
       groups.get(groupKey)!.push(image);
     });
 
-    // Convert to array and sort
     const sorted = Array.from(groups.entries())
       .map(([groupName, images]) => ({ 
-        filterName: groupName, // Keep property name for compatibility
+        filterName: groupName,
         images: images.sort((a, b) => {
-          // Within each group, sort by acquired date
           const dateA = a.acquired_date || 0;
           const dateB = b.acquired_date || 0;
           return dateA - dateB;
         })
       }));
     
-    // Sort groups
     if (groupingMode === 'date') {
-      // Sort by date descending (newest first)
       sorted.sort((a, b) => b.filterName.localeCompare(a.filterName));
     } else {
-      // Sort alphabetically
       sorted.sort((a, b) => a.filterName.localeCompare(b.filterName));
     }
     
     return sorted;
   }, [allImages, groupingMode]);
 
-  // Initialize expanded groups when imageGroups change
+  // Initialize expanded groups
   useEffect(() => {
     if (expandedGroups.size === 0 && imageGroups.length > 0) {
       setExpandedGroups(new Set(imageGroups.map(g => g.filterName)));
     }
-  }, [imageGroups]); // Remove expandedGroups.size dependency to avoid circular updates
+  }, [imageGroups]);
 
   // Reset expanded groups when grouping mode changes
   useEffect(() => {
-    // Expand all groups when grouping mode changes
     if (imageGroups.length > 0) {
       setExpandedGroups(new Set(imageGroups.map(g => g.filterName)));
     }
   }, [groupingMode, imageGroups]);
+
+  // Calculate images per row based on container width
+  const getImagesPerRow = useCallback((width: number) => {
+    const gap = 16; // 1rem gap
+    const padding = 48; // 1.5rem padding on each side
+    const availableWidth = width - padding;
+    return Math.floor(availableWidth / (imageSize + gap));
+  }, [imageSize]);
+
+  // Calculate row heights
+  const getItemSize = useCallback((index: number) => {
+    const group = imageGroups[index];
+    if (!group) return 60; // Header height
+
+    const headerHeight = 60;
+    if (!expandedGroups.has(group.filterName)) {
+      return headerHeight;
+    }
+
+    // Calculate content height based on number of rows
+    const containerWidth = containerRef.current?.clientWidth || 1200;
+    const imagesPerRow = getImagesPerRow(containerWidth);
+    const rows = Math.ceil(group.images.length / imagesPerRow);
+    const imageHeight = imageSize * 1.5; // Approximate height with info
+    const contentHeight = rows * imageHeight + (rows - 1) * 16; // Include gaps
+    
+    return headerHeight + contentHeight + 32; // Add padding
+  }, [imageGroups, expandedGroups, imageSize, getImagesPerRow]);
+
+  // Grade mutation
+  const gradeMutation = useMutation({
+    mutationFn: ({ imageId, request }: { imageId: number; request: UpdateGradeRequest }) =>
+      apiClient.updateImageGrade(imageId, request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['all-images'] });
+    },
+  });
 
   // Flatten images for navigation
   const flatImages = useMemo(() => {
@@ -126,25 +242,6 @@ export default function GroupedImageGrid({ projectId, targetId }: ImageGridProps
     });
     return result;
   }, [imageGroups, expandedGroups]);
-
-  // Update selected image when indices change
-  useEffect(() => {
-    const currentFlat = flatImages.find(
-      item => item.groupIndex === selectedGroupIndex && item.indexInGroup === selectedImageIndex
-    );
-    if (currentFlat) {
-      setSelectedImageId(currentFlat.image.id);
-    }
-  }, [selectedGroupIndex, selectedImageIndex, flatImages]);
-
-  // Grade mutation
-  const gradeMutation = useMutation({
-    mutationFn: ({ imageId, request }: { imageId: number; request: UpdateGradeRequest }) =>
-      apiClient.updateImageGrade(imageId, request),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['all-images'] });
-    },
-  });
 
   const navigateImages = useCallback((direction: 'next' | 'prev') => {
     const currentIndex = flatImages.findIndex(
@@ -160,7 +257,12 @@ export default function GroupedImageGrid({ projectId, targetId }: ImageGridProps
     const newItem = flatImages[newIndex];
     setSelectedGroupIndex(newItem.groupIndex);
     setSelectedImageIndex(newItem.indexInGroup);
-    setSelectedImageId(newItem.image.id); // Set immediately, don't wait for useEffect
+    setSelectedImageId(newItem.image.id);
+
+    // Scroll to the group if needed
+    if (listRef.current && newItem.groupIndex !== selectedGroupIndex) {
+      listRef.current.scrollToItem(newItem.groupIndex, 'smart');
+    }
   }, [flatImages, selectedGroupIndex, selectedImageIndex]);
 
   const gradeImage = useCallback((status: 'accepted' | 'rejected' | 'pending') => {
@@ -171,7 +273,6 @@ export default function GroupedImageGrid({ projectId, targetId }: ImageGridProps
       request: { status },
     });
 
-    // Auto-advance to next image
     setTimeout(() => navigateImages('next'), 100);
   }, [selectedImageId, gradeMutation, navigateImages]);
 
@@ -187,6 +288,12 @@ export default function GroupedImageGrid({ projectId, targetId }: ImageGridProps
     });
   }, []);
 
+  const handleImageClick = useCallback((groupIndex: number, imageIndex: number, imageId: number) => {
+    setSelectedGroupIndex(groupIndex);
+    setSelectedImageIndex(imageIndex);
+    setSelectedImageId(imageId);
+  }, []);
+
   // Keyboard shortcuts
   useHotkeys('j', () => navigateImages('next'), [navigateImages]);
   useHotkeys('k', () => navigateImages('prev'), [navigateImages]);
@@ -195,10 +302,7 @@ export default function GroupedImageGrid({ projectId, targetId }: ImageGridProps
   useHotkeys('u', () => gradeImage('pending'), [gradeImage]);
   useHotkeys('enter', () => setShowDetail(true), []);
   useHotkeys('escape', () => setShowDetail(false), []);
-  
-  // Grouping mode shortcuts
   useHotkeys('g', () => {
-    // Cycle through grouping modes
     setGroupingMode(current => {
       if (current === 'filter') return 'date';
       if (current === 'date') return 'both';
@@ -210,9 +314,20 @@ export default function GroupedImageGrid({ projectId, targetId }: ImageGridProps
     return <div className="loading">Loading images...</div>;
   }
 
+  const itemData: VirtualRowData = {
+    groups: imageGroups,
+    expandedGroups,
+    imageSize,
+    selectedGroupIndex,
+    selectedImageIndex,
+    onImageClick: handleImageClick,
+    onImageDoubleClick: () => setShowDetail(true),
+    getImagesPerRow,
+  };
+
   return (
     <>
-      <div className="grouped-image-container">
+      <div className="grouped-image-container" ref={containerRef}>
         <div className="image-controls">
           <div className="control-row">
             <div className="size-control">
@@ -244,64 +359,17 @@ export default function GroupedImageGrid({ projectId, targetId }: ImageGridProps
           </div>
         </div>
 
-        <div className="image-groups" ref={gridRef}>
-          {imageGroups.map((group, groupIndex) => {
-            const isExpanded = expandedGroups.has(group.filterName);
-            const stats = {
-              total: group.images.length,
-              accepted: group.images.filter(img => img.grading_status === GradingStatus.Accepted).length,
-              rejected: group.images.filter(img => img.grading_status === GradingStatus.Rejected).length,
-              pending: group.images.filter(img => img.grading_status === GradingStatus.Pending).length,
-            };
-
-            return (
-              <div key={group.filterName} className="filter-group">
-                <div 
-                  className="filter-header"
-                  onClick={() => toggleGroup(group.filterName)}
-                >
-                  <span className="filter-toggle">{isExpanded ? '▼' : '▶'}</span>
-                  <h3>{group.filterName}</h3>
-                  <div className="filter-stats">
-                    <span className="stat-total">{stats.total} images</span>
-                    <span className="stat-accepted">{stats.accepted} accepted</span>
-                    <span className="stat-rejected">{stats.rejected} rejected</span>
-                    <span className="stat-pending">{stats.pending} pending</span>
-                  </div>
-                </div>
-                
-                {isExpanded && (
-                  <div 
-                    className="filter-images"
-                    style={{
-                      gridTemplateColumns: `repeat(auto-fill, minmax(${imageSize}px, 1fr))`,
-                    }}
-                  >
-                    {group.images.map((image, indexInGroup) => (
-                      <ImageCard
-                        key={image.id}
-                        image={image}
-                        isSelected={
-                          selectedGroupIndex === groupIndex && 
-                          selectedImageIndex === indexInGroup
-                        }
-                        onClick={() => {
-                          setSelectedGroupIndex(groupIndex);
-                          setSelectedImageIndex(indexInGroup);
-                          setSelectedImageId(image.id);
-                        }}
-                        onDoubleClick={() => setShowDetail(true)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          
-          {imageGroups.length === 0 && (
-            <div className="empty-state">No images found</div>
-          )}
+        <div className="image-groups-virtualized">
+          <List
+            ref={listRef}
+            height={containerHeight - 120} // Subtract controls height
+            itemCount={imageGroups.length}
+            itemSize={getItemSize}
+            itemData={itemData}
+            width="100%"
+          >
+            {GroupRow}
+          </List>
         </div>
       </div>
 
@@ -319,12 +387,10 @@ export default function GroupedImageGrid({ projectId, targetId }: ImageGridProps
             const next = [];
             const previous = [];
             
-            // Get next 2 image IDs
             for (let i = 1; i <= 2 && currentIndex + i < flatImages.length; i++) {
               next.push(flatImages[currentIndex + i].image.id);
             }
             
-            // Get previous 2 image IDs
             for (let i = 1; i <= 2 && currentIndex - i >= 0; i++) {
               previous.push(flatImages[currentIndex - i].image.id);
             }
