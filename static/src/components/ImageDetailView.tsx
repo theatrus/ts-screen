@@ -154,6 +154,14 @@ export default function ImageDetailView({
                 <span className="date-value">{formatDate(image.acquired_date)}</span>
               </div>
               
+              {/* Camera on its own row */}
+              {image.metadata?.Camera !== undefined && (
+                <div className="date-row">
+                  <span className="date-label">Camera:</span>
+                  <span className="date-value">{image.metadata.Camera}</span>
+                </div>
+              )}
+              
               {/* Two-column layout for other metadata */}
               <dl>
                 {starData && (

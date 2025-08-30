@@ -173,10 +173,7 @@ pub async fn get_image(
         // Load from cache
         match tokio::fs::read_to_string(&stats_cache_path).await {
             Ok(cached_data) => {
-                match serde_json::from_str::<serde_json::Value>(&cached_data) {
-                    Ok(stats) => Some(stats),
-                    Err(_) => None,
-                }
+                serde_json::from_str::<serde_json::Value>(&cached_data).ok()
             },
             Err(_) => None,
         }
@@ -194,7 +191,12 @@ pub async fn get_image(
         if let Some(Ok(fits_path)) = filename_result {
             if let Ok(fits) = FitsImage::from_file(&fits_path) {
                 let stats = fits.calculate_basic_statistics();
-                let stats_json = serde_json::json!({
+                
+                // Extract temperature and camera model from FITS headers
+                let temperature = FitsImage::extract_temperature(&fits_path);
+                let camera_model = FitsImage::extract_camera_model(&fits_path);
+                
+                let mut stats_json = serde_json::json!({
                     "Min": stats.min,
                     "Max": stats.max,
                     "Mean": stats.mean,
@@ -202,6 +204,16 @@ pub async fn get_image(
                     "StdDev": stats.std_dev,
                     "Mad": stats.mad
                 });
+                
+                // Add temperature if available
+                if let Some(temp) = temperature {
+                    stats_json["Temperature"] = serde_json::json!(temp);
+                }
+                
+                // Add camera model if available
+                if let Some(camera) = camera_model {
+                    stats_json["Camera"] = serde_json::json!(camera);
+                }
 
                 // Cache the statistics
                 if let Ok(cached_data) = serde_json::to_string(&stats_json) {
