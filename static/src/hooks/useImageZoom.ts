@@ -42,6 +42,9 @@ export function useImageZoom(bounds: ZoomBounds = DEFAULT_BOUNDS): UseImageZoomR
     offsetX: 0,
     offsetY: 0,
   });
+  
+  // Flag to prevent auto-fit interference with intentional zoom operations
+  const intentionalZoomRef = useRef(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -107,6 +110,9 @@ export function useImageZoom(bounds: ZoomBounds = DEFAULT_BOUNDS): UseImageZoomR
 
   // Zoom to 100% (actual size)
   const zoomTo100 = useCallback(() => {
+    // Mark this as an intentional zoom operation
+    intentionalZoomRef.current = true;
+    
     const container = containerRef.current;
     const image = imageRef.current;
     
@@ -327,14 +333,16 @@ export function useImageZoom(bounds: ZoomBounds = DEFAULT_BOUNDS): UseImageZoomR
     if (container && image && image.complete && image.naturalWidth > 0) {
       const fitScale = calculateFitScale();
       initialFitScaleRef.current = fitScale;
-      if (zoomState.scale === 1) {
-        // Only auto-fit if we're at the default scale
+      if (zoomState.scale === 1 && !intentionalZoomRef.current) {
+        // Only auto-fit if we're at the default scale and it's not intentional
         setZoomState({
           scale: fitScale,
           offsetX: 0,
           offsetY: 0,
         });
       }
+      // Reset the flag after any potential auto-fit
+      intentionalZoomRef.current = false;
     }
   }, [calculateFitScale, zoomState.scale]);
 
