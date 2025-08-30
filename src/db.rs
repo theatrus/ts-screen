@@ -180,6 +180,39 @@ impl<'a> Database<'a> {
         Ok(images)
     }
 
+    pub fn get_targets_by_ids(&self, ids: &[i32]) -> Result<Vec<Target>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let query = format!(
+            "SELECT Id, projectId, name, active, ra, dec
+             FROM target
+             WHERE Id IN ({})",
+            placeholders
+        );
+
+        let mut stmt = self.conn.prepare(&query)?;
+        let params: Vec<&dyn rusqlite::ToSql> =
+            ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+
+        let targets = stmt
+            .query_map(params.as_slice(), |row| {
+                Ok(Target {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    name: row.get(2)?,
+                    active: row.get(3)?,
+                    ra: row.get(4)?,
+                    dec: row.get(5)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(targets)
+    }
+
     // Update queries
     pub fn update_grading_status(
         &self,

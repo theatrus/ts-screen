@@ -78,6 +78,13 @@ jobs:
         toolchain: 1.89.0
         components: rustfmt, clippy
     
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: static/package-lock.json
+    
     - name: Cache cargo registry
       uses: actions/cache@v4
       with:
@@ -95,6 +102,11 @@ jobs:
       with:
         path: target
         key: ${{ runner.os }}-cargo-build-target-opencv-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Install npm dependencies
+      run: |
+        cd static
+        npm ci
     
     - name: Check formatting
       run: cargo fmt -- --check
