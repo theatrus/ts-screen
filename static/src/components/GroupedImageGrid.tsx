@@ -1,14 +1,16 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { apiClient } from '../api/client';
-import type { Image, UpdateGradeRequest } from '../api/types';
+import type { Image } from '../api/types';
 import { GradingStatus } from '../api/types';
+import { useGrading } from '../hooks/useGrading';
 import ImageCard from './ImageCard';
 import LazyImageCard from './LazyImageCard';
 import ImageDetailView from './ImageDetailView';
 import FilterControls, { type FilterOptions } from './FilterControls';
 import StatsDashboard from './StatsDashboard';
+import UndoRedoToolbar from './UndoRedoToolbar';
 
 interface ImageGridProps {
   projectId: number;
@@ -24,7 +26,8 @@ interface GroupedImageGridProps extends ImageGridProps {
 }
 
 export default function GroupedImageGrid({ projectId, targetId, useLazyImages = false, showStats = false }: GroupedImageGridProps) {
-  const queryClient = useQueryClient();
+  // Initialize grading system with undo/redo
+  const grading = useGrading();
   const [selectedGroupIndex, setSelectedGroupIndex] = useState(0);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [selectedImageId, setSelectedImageId] = useState<number | null>(null);
@@ -192,16 +195,7 @@ export default function GroupedImageGrid({ projectId, targetId, useLazyImages = 
     }
   }, [selectedGroupIndex, selectedImageIndex, flatImages]);
 
-  // Grade mutation
-  const gradeMutation = useMutation({
-    mutationFn: ({ imageId, request }: { imageId: number; request: UpdateGradeRequest }) =>
-      apiClient.updateImageGrade(imageId, request),
-    onSuccess: (_data, variables) => {
-      // Invalidate both the all-images list and the individual image queries
-      queryClient.invalidateQueries({ queryKey: ['all-images'] });
-      queryClient.invalidateQueries({ queryKey: ['image', variables.imageId] });
-    },
-  });
+  // Grading is now handled by the useGrading hook
 
   const navigateImages = useCallback((direction: 'next' | 'prev') => {
     const currentIndex = flatImages.findIndex(
@@ -220,17 +214,17 @@ export default function GroupedImageGrid({ projectId, targetId, useLazyImages = 
     setSelectedImageId(newItem.image.id); // Set immediately, don't wait for useEffect
   }, [flatImages, selectedGroupIndex, selectedImageIndex]);
 
-  const gradeImage = useCallback((status: 'accepted' | 'rejected' | 'pending') => {
+  const gradeImage = useCallback(async (status: 'accepted' | 'rejected' | 'pending') => {
     if (!selectedImageId) return;
 
-    gradeMutation.mutate({
-      imageId: selectedImageId,
-      request: { status },
-    });
-
-    // Auto-advance to next image
-    setTimeout(() => navigateImages('next'), 100);
-  }, [selectedImageId, gradeMutation, navigateImages]);
+    try {
+      await grading.gradeImage(selectedImageId, status);
+      // Auto-advance to next image
+      setTimeout(() => navigateImages('next'), 100);
+    } catch (error) {
+      console.error('Failed to grade image:', error);
+    }
+  }, [selectedImageId, grading, navigateImages]);
 
   const toggleGroup = useCallback((filterName: string) => {
     setExpandedGroups(prev => {
@@ -290,29 +284,19 @@ export default function GroupedImageGrid({ projectId, targetId, useLazyImages = 
   }, [flatImages, lastSelectedImageId]);
 
   // Batch grading functions
-  const gradeBatch = useCallback((status: 'accepted' | 'rejected' | 'pending') => {
+  const gradeBatch = useCallback(async (status: 'accepted' | 'rejected' | 'pending') => {
     if (selectedImages.size === 0) return;
 
-    const promises = Array.from(selectedImages).map(imageId =>
-      gradeMutation.mutateAsync({
-        imageId,
-        request: { status },
-      })
-    );
-
-    Promise.all(promises).then(() => {
-      // Invalidate all the individual image queries for batch updates
-      Array.from(selectedImages).forEach(imageId => {
-        queryClient.invalidateQueries({ queryKey: ['image', imageId] });
-      });
+    try {
+      await grading.gradeBatch(Array.from(selectedImages), status);
       
       // Clear selection after batch operation
       setSelectedImages(new Set());
       setLastSelectedImageId(null);
-    }).catch((error) => {
+    } catch (error) {
       console.error('Batch grading failed:', error);
-    });
-  }, [selectedImages, gradeMutation, queryClient]);
+    }
+  }, [selectedImages, grading]);
 
   // Clear selection when filters change
   useEffect(() => {
@@ -399,6 +383,21 @@ export default function GroupedImageGrid({ projectId, targetId, useLazyImages = 
               </select>
             </div>
           </div>
+          
+          {/* Undo/Redo Toolbar */}
+          <UndoRedoToolbar
+            canUndo={grading.canUndo}
+            canRedo={grading.canRedo}
+            isProcessing={grading.isLoading}
+            undoStackSize={grading.undoStackSize}
+            redoStackSize={grading.redoStackSize}
+            onUndo={grading.undo}
+            onRedo={grading.redo}
+            getLastAction={grading.getLastAction}
+            getNextRedoAction={grading.getNextRedoAction}
+            className="compact"
+          />
+          
           <div className="group-stats">
             Total: {filteredImages.length} of {allImages.length} images in {imageGroups.length} groups
             {filters.status !== 'all' && ` (${filters.status})`}
@@ -526,6 +525,7 @@ export default function GroupedImageGrid({ projectId, targetId, useLazyImages = 
           onNext={() => navigateImages('next')}
           onPrevious={() => navigateImages('prev')}
           onGrade={gradeImage}
+          grading={grading}
           adjacentImageIds={(() => {
             const currentIndex = flatImages.findIndex(
               item => item.image.id === selectedImageId

@@ -1297,3 +1297,191 @@
     left: 100%;
   }
 }
+
+/* Undo/Redo Toolbar */
+.undo-redo-toolbar {
+  background: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.undo-redo-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.undo-button,
+.redo-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #333;
+  color: #e0e0e0;
+  border: 1px solid #444;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.9rem;
+  position: relative;
+  min-width: 70px;
+}
+
+.undo-button:hover:not(.disabled),
+.redo-button:hover:not(.disabled) {
+  background: #444;
+  border-color: #555;
+  transform: translateY(-1px);
+}
+
+.undo-button.disabled,
+.redo-button.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: #2a2a2a;
+  border-color: #333;
+}
+
+.undo-icon,
+.redo-icon {
+  font-size: 1.1rem;
+  font-weight: bold;
+}
+
+.button-text {
+  font-weight: 500;
+}
+
+.stack-count {
+  background: #61dafb;
+  color: #000;
+  font-size: 0.7rem;
+  font-weight: bold;
+  padding: 0.1rem 0.4rem;
+  border-radius: 10px;
+  margin-left: 0.2rem;
+  min-width: 16px;
+  text-align: center;
+}
+
+.action-descriptions {
+  flex: 1;
+  min-width: 0;
+}
+
+.last-action {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: #999;
+}
+
+.action-label {
+  color: #777;
+  font-weight: 500;
+}
+
+.action-desc {
+  color: #ccc;
+  font-weight: 500;
+}
+
+.action-time {
+  color: #666;
+  font-style: italic;
+}
+
+.feedback-message {
+  position: absolute;
+  top: -2.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #4caf50;
+  color: white;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+  z-index: 1000;
+  animation: fadeInOut 2s ease-in-out forwards;
+}
+
+.feedback-message.redo {
+  background: #2196f3;
+}
+
+.processing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #61dafb;
+  font-size: 0.85rem;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #333;
+  border-top: 2px solid #61dafb;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes fadeInOut {
+  0% { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  20% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  80% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+}
+
+/* Toolbar compact mode */
+.undo-redo-toolbar.compact {
+  padding: 0.3rem;
+  gap: 0.5rem;
+}
+
+.undo-redo-toolbar.compact .undo-button,
+.undo-redo-toolbar.compact .redo-button {
+  padding: 0.3rem 0.6rem;
+  min-width: 60px;
+}
+
+.undo-redo-toolbar.compact .action-descriptions {
+  display: none;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .undo-redo-toolbar {
+    padding: 0.3rem;
+    gap: 0.5rem;
+  }
+  
+  .undo-button,
+  .redo-button {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.8rem;
+    min-width: 55px;
+  }
+  
+  .button-text {
+    display: none;
+  }
+  
+  .action-descriptions {
+    display: none;
+  }
+}

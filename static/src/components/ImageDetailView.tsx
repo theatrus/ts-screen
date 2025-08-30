@@ -5,6 +5,7 @@ import { apiClient } from '../api/client';
 import { GradingStatus } from '../api/types';
 import { useImagePreloader } from '../hooks/useImagePreloader';
 import { useImageZoom } from '../hooks/useImageZoom';
+import UndoRedoToolbar from './UndoRedoToolbar';
 
 interface ImageDetailViewProps {
   imageId: number;
@@ -13,6 +14,18 @@ interface ImageDetailViewProps {
   onPrevious: () => void;
   onGrade: (status: 'accepted' | 'rejected' | 'pending') => void;
   adjacentImageIds?: { next: number[]; previous: number[] };
+  // Optional grading system for undo/redo (passed from parent)
+  grading?: {
+    canUndo: boolean;
+    canRedo: boolean;
+    isLoading: boolean;
+    undoStackSize: number;
+    redoStackSize: number;
+    undo: () => Promise<boolean>;
+    redo: () => Promise<boolean>;
+    getLastAction: () => any;
+    getNextRedoAction: () => any;
+  };
 }
 
 export default function ImageDetailView({
@@ -22,6 +35,7 @@ export default function ImageDetailView({
   onPrevious,
   onGrade,
   adjacentImageIds,
+  grading,
 }: ImageDetailViewProps) {
   const [showStars, setShowStars] = useState(false);
   const [showPsf, setShowPsf] = useState(false);
@@ -311,6 +325,22 @@ export default function ImageDetailView({
               </button>
             </div>
 
+            {/* Undo/Redo Toolbar (only show if grading system is provided) */}
+            {grading && (
+              <UndoRedoToolbar
+                canUndo={grading.canUndo}
+                canRedo={grading.canRedo}
+                isProcessing={grading.isLoading}
+                undoStackSize={grading.undoStackSize}
+                redoStackSize={grading.redoStackSize}
+                onUndo={grading.undo}
+                onRedo={grading.redo}
+                getLastAction={grading.getLastAction}
+                getNextRedoAction={grading.getNextRedoAction}
+                className="compact"
+              />
+            )}
+
             <div className="detail-shortcuts">
               <div className="shortcut-grid">
                 <span>J/→ Next</span>
@@ -321,6 +351,8 @@ export default function ImageDetailView({
                 <span>S Stars {showStars ? '✓' : ''}</span>
                 <span>P PSF {showPsf ? '✓' : ''}</span>
                 <span>Z Size</span>
+                {grading && <span>⌘Z Undo</span>}
+                {grading && <span>⌘Y Redo</span>}
               </div>
             </div>
 

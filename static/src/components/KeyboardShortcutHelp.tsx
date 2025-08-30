@@ -42,9 +42,11 @@ export default function KeyboardShortcutHelp({ onClose }: KeyboardShortcutHelpPr
       { key: 'Ctrl+Click', description: 'Toggle individual image selection' },
       { key: 'ESC', description: 'Clear all selections' },
     ]},
-    { category: 'Future Features', items: [
-      { key: 'Ctrl+Z', description: 'Undo last action (coming soon)' },
-      { key: 'Ctrl+Y', description: 'Redo last action (coming soon)' },
+    { category: 'Undo/Redo', items: [
+      { key: 'Ctrl+Z', description: 'Undo last grading action' },
+      { key: 'Cmd+Z', description: 'Undo last grading action (Mac)' },
+      { key: 'Ctrl+Y', description: 'Redo last grading action' },
+      { key: 'Cmd+Y', description: 'Redo last grading action (Mac)' },
     ]},
   ];
 
